@@ -1,0 +1,30 @@
+{
+  "name": "kuakua",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "DATA_DIR=./data-demo DEV_AUTH_EMAIL=mushan@maxinsights.ai ADMIN_EMAILS=mushan@maxinsights.ai PORT=4381 bun --hot src/server/index.ts",
+    "demo:seed": "DATA_DIR=./data-demo bun scripts/seed-demo.ts",
+    "start": "NODE_ENV=production bun src/server/index.ts",
+    "sync": "NODE_ENV=production bun src/server/sync-cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
+    "@fontsource-variable/figtree": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource/instrument-serif": "^5.3.0",
+    "@heroicons/react": "^2.2.0",
+    "canvas-confetti": "^1.9.4",
+    "jose": "^6.2.12",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
+}
