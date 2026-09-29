@@ -28,7 +28,6 @@ export const config = {
     devEmail: env.DEV_AUTH_EMAIL?.toLowerCase() ?? "",
   },
   allowedDomains: list(env.ALLOWED_EMAIL_DOMAINS ?? "maxinsights.ai"),
-  adminEmails: new Set(list(env.ADMIN_EMAILS)),
 
   lark: {
     appId: env.LARK_APP_ID ?? "",
@@ -47,6 +46,9 @@ export const config = {
       .filter((n) => Number.isInteger(n) && n > 0),
   },
 };
+
+// Deliberately hard-coded: admin (sync, bonus report, leaderboard, people directory, moderation).
+export const ADMIN_EMAILS: ReadonlySet<string> = new Set(["mushan@maxinsights.ai"]);
 
 export const larkEnabled = () => Boolean(config.lark.appId && config.lark.appSecret);
 

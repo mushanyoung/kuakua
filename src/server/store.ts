@@ -1,4 +1,4 @@
-import { config, isAllowedEmail } from "./config";
+import { ADMIN_EMAILS, config, isAllowedEmail } from "./config";
 import { db } from "./db";
 import { periodBounds, periodOf, rangeStart, type Range } from "./time";
 import { LIMITS, REACTIONS, VALUE_IDS } from "../shared/values";
@@ -103,7 +103,7 @@ export function resolveViewer(email: string): Viewer {
   } else if (!row.last_seen_at || now - row.last_seen_at > 5 * 60_000) {
     touch.run({ now, id: row.id });
   }
-  return { id: row.id, email, isAdmin: config.adminEmails.has(email), row };
+  return { id: row.id, email, isAdmin: ADMIN_EMAILS.has(email), row };
 }
 
 export function setLang(userId: number, lang: string) {

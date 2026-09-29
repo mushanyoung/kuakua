@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "DATA_DIR=./data-demo DEV_AUTH_EMAIL=mushan@maxinsights.ai ADMIN_EMAILS=mushan@maxinsights.ai PORT=4381 bun --hot src/server/index.ts",
+    "dev": "DATA_DIR=./data-demo DEV_AUTH_EMAIL=mushan@maxinsights.ai PORT=4381 bun --hot src/server/index.ts",
     "demo:seed": "DATA_DIR=./data-demo bun scripts/seed-demo.ts",
     "start": "NODE_ENV=production bun src/server/index.ts",
     "sync": "NODE_ENV=production bun src/server/sync-cli.ts",
