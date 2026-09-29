@@ -1713,19 +1713,6 @@ button.value-chip:hover {
   font-weight: 500;
   color: var(--text-3);
 }
-.field-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-.add-cc {
-  font-size: 12.5px;
-  text-decoration: none;
-  color: var(--text-3);
-}
-.add-cc:hover {
-  color: #ffc1ce;
-}
 .pl-tag {
   flex: none;
   padding: 1px 7px;

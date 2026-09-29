@@ -36,7 +36,6 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   const [kind, setKind] = useState<"kudos" | "bonus">(prefill?.kind ?? "kudos");
   const [recipientIds, setRecipientIds] = useState<number[]>(prefill?.recipientIds?.filter((id) => id !== me.user.id) ?? []);
   const [ccIds, setCcIds] = useState<number[]>([]);
-  const [showCc, setShowCc] = useState(false);
   const [valueTag, setValueTag] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [points, setPoints] = useState(amounts[0] ?? 10);
@@ -167,20 +166,9 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           </button>
         </div>
 
-        <div className="field-row">
-          <label className="field-label" htmlFor="composer-to">
-            {t("composer.to")}
-          </label>
-          {!showCc && (
-            <button
-              type="button"
-              className="link-btn add-cc"
-              onClick={() => (setShowCc(true), requestAnimationFrame(() => ccRef.current?.focus()))}
-            >
-              + {t("composer.addCc")}
-            </button>
-          )}
-        </div>
+        <label className="field-label" htmlFor="composer-to">
+          {t("composer.to")}
+        </label>
         <PeoplePicker
           id="composer-to"
           value={recipientIds}
@@ -191,23 +179,19 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           inputRef={searchRef}
           suggest={suggestTo}
         />
-        {showCc && (
-          <>
-            <label className="field-label" htmlFor="composer-cc">
-              {t("composer.cc")} <small>{t("composer.ccHint")}</small>
-            </label>
-            <PeoplePicker
-              id="composer-cc"
-              value={ccIds}
-              onChange={setCcIds}
-              exclude={recipientIds}
-              max={LIMITS.ccMax}
-              placeholder={t("composer.ccPlaceholder")}
-              inputRef={ccRef}
-              suggest={suggestCc}
-            />
-          </>
-        )}
+        <label className="field-label" htmlFor="composer-cc">
+          {t("composer.cc")} <small>{t("composer.ccHint")}</small>
+        </label>
+        <PeoplePicker
+          id="composer-cc"
+          value={ccIds}
+          onChange={setCcIds}
+          exclude={recipientIds}
+          max={LIMITS.ccMax}
+          placeholder={t("composer.ccPlaceholder")}
+          inputRef={ccRef}
+          suggest={suggestCc}
+        />
 
         <div className="field-label">
           {t("composer.why")} <small>{t("composer.optional")}</small>
