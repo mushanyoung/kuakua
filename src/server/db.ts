@@ -87,6 +87,14 @@ const migrations = [
     error TEXT
   );
   `,
+  `
+  ALTER TABLE users ADD COLUMN leader_open_id TEXT;
+  CREATE TABLE post_cc (
+    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    PRIMARY KEY (post_id, user_id)
+  );
+  `,
 ];
 
 const current = (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;

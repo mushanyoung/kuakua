@@ -123,7 +123,7 @@ const server = Bun.serve({
         const detail = store.postDetail(id, viewer);
         const p = detail.post;
         const allowance = store.allowance(viewer.id);
-        notifyPost(p, p.senderId, p.recipientIds, allowance.remaining).catch((e) => console.error("notify", e));
+        notifyPost(p, allowance.remaining).catch((e) => console.error("notify", e));
         return { ...detail, allowance };
       }),
     },

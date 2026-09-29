@@ -97,6 +97,7 @@ type LarkUser = {
   orders?: { department_id: string; is_primary_dept?: boolean }[];
   job_title?: string;
   join_time?: number;
+  leader_user_id?: string;
 };
 
 const ID_TYPES = { user_id_type: "open_id", department_id_type: "open_department_id" };
@@ -229,6 +230,7 @@ async function runSync(trigger: string) {
           title: u.job_title || null,
           active,
           joined: u.join_time ? u.join_time * 1000 : null,
+          leader: u.leader_user_id || null,
           now,
         };
         let row = (byOpenId.get({ openId: u.open_id }) ?? (email ? byEmail.get({ email }) : null)) as Existing | null;
@@ -236,14 +238,16 @@ async function runSync(trigger: string) {
         if (row) {
           db.query(
             `UPDATE users SET open_id = $openId, email = $email, name = $name, en_name = $en, dept_id = $dept,
-               job_title = $title, active = $active, joined_at = $joined, source = 'lark', updated_at = $now
+               job_title = $title, active = $active, joined_at = $joined, leader_open_id = $leader,
+               source = 'lark', updated_at = $now
              WHERE id = $id`,
           ).run({ ...fields, email: safeEmail, id: row.id });
         } else {
           const res = db
             .query(
-              `INSERT INTO users (open_id, email, name, en_name, dept_id, job_title, active, joined_at, source, created_at, updated_at)
-               VALUES ($openId, $email, $name, $en, $dept, $title, $active, $joined, 'lark', $now, $now)`,
+              `INSERT INTO users (open_id, email, name, en_name, dept_id, job_title, active, joined_at, leader_open_id,
+                                  source, created_at, updated_at)
+               VALUES ($openId, $email, $name, $en, $dept, $title, $active, $joined, $leader, 'lark', $now, $now)`,
             )
             .run({ ...fields, email: safeEmail });
           row = { id: Number(res.lastInsertRowid), email: safeEmail, avatar_src: null, avatar_ver: null };
@@ -310,7 +314,16 @@ export function lastSuccessfulSync() {
 
 // ---------------------------------------------------------------- notifications
 
-type NotifyPost = { id: number; kind: "kudos" | "bonus"; message: string; valueTag: string | null; points: number };
+type NotifyPost = {
+  id: number;
+  kind: "kudos" | "bonus";
+  message: string;
+  valueTag: string | null;
+  points: number;
+  senderId: number;
+  recipientIds: number[];
+  ccIds: number[];
+};
 
 const copy = {
   zh: {
@@ -321,6 +334,9 @@ const copy = {
     broadcastBonus: (s: string, r: string, p: number) => `${s} 给 ${r} 发了 Peer Bonus · 每人 +${p}`,
     sentKudos: (r: string) => `你夸了 ${r}`,
     sentBonus: (r: string, p: number, many: boolean) => `你给 ${r} 发了 Peer Bonus · ${many ? "每人 " : ""}+${p}`,
+    ccKudos: (s: string, r: string) => `${s} 夸了 ${r} · 抄送给你`,
+    ccBonus: (s: string, r: string) => `${s} 给 ${r} 发了 Peer Bonus · 抄送给你`,
+    ccNote: (names: string) => `抄送：${names}`,
     remaining: (n: number) => `本月剩余 ${n} 积分`,
     andMore: (n: number) => `等 ${n} 人`,
     sep: "、",
@@ -333,18 +349,26 @@ const copy = {
     broadcastBonus: (s: string, r: string, p: number) => `${s} sent ${r} a Peer Bonus · +${p} each`,
     sentKudos: (r: string) => `You gave kudos to ${r}`,
     sentBonus: (r: string, p: number, many: boolean) => `You sent ${r} a Peer Bonus · +${p}${many ? " each" : ""}`,
+    ccKudos: (s: string, r: string) => `${s} gave kudos to ${r} · cc'd to you`,
+    ccBonus: (s: string, r: string) => `${s} sent ${r} a Peer Bonus · cc'd to you`,
+    ccNote: (names: string) => `CC: ${names}`,
     remaining: (n: number) => `${n} pts left this month`,
     andMore: (n: number) => ` and ${n} others`,
     sep: ", ",
   },
 };
 
-function card(title: string, post: NotifyPost, lang: "zh" | "en", footer: string) {
+type Lang = keyof typeof copy;
+
+function card(title: string, post: NotifyPost, lang: Lang, notes: (string | null)[], template?: string) {
   const tag = valueById(post.valueTag);
-  const note = [tag ? `# ${lang === "zh" ? tag.zh : tag.en}` : null, footer].filter(Boolean).join("  ·  ");
+  const note = [tag ? `# ${lang === "zh" ? tag.zh : tag.en}` : null, ...notes].filter(Boolean).join("  ·  ");
   return {
     config: { wide_screen_mode: true },
-    header: { template: post.kind === "bonus" ? "orange" : "carmine", title: { tag: "plain_text", content: title } },
+    header: {
+      template: template ?? (post.kind === "bonus" ? "orange" : "carmine"),
+      title: { tag: "plain_text", content: title },
+    },
     elements: [
       { tag: "div", text: { tag: "plain_text", content: `“${post.message}”` } },
       ...(note ? [{ tag: "note", elements: [{ tag: "plain_text", content: note }] }] : []),
@@ -366,13 +390,14 @@ async function send(receiveIdType: "open_id" | "chat_id", receiveId: string, con
   });
 }
 
-// Recipients get "X thanked you"; the sender gets a receipt "you thanked X, Y";
-// optionally the whole thing is broadcast to a group chat.
-export async function notifyPost(post: NotifyPost, senderId: number, recipientIds: number[], senderRemaining?: number) {
+// Recipients get "X thanked you", CC'd colleagues get "X thanked Y · cc'd to you",
+// the sender gets a receipt "you thanked Y"; optionally everything is broadcast to a group.
+export async function notifyPost(post: NotifyPost, senderRemaining?: number) {
   if (!larkEnabled() || !config.lark.notify) return;
+  const { senderId, recipientIds, ccIds } = post;
   const people = db
     .query("SELECT id, name, en_name, open_id, lang FROM users WHERE id IN (SELECT value FROM json_each($ids))")
-    .all({ ids: JSON.stringify([senderId, ...recipientIds]) }) as {
+    .all({ ids: JSON.stringify([senderId, ...recipientIds, ...ccIds]) }) as {
     id: number;
     name: string;
     en_name: string | null;
@@ -382,39 +407,45 @@ export async function notifyPost(post: NotifyPost, senderId: number, recipientId
   const byId = new Map(people.map((p) => [p.id, p]));
   const sender = byId.get(senderId);
   if (!sender) return;
-  const nameIn = (p: { name: string; en_name: string | null }, lang: "zh" | "en") => (lang === "en" && p.en_name) || p.name;
-  const names = (lang: "zh" | "en") => {
+  const langOf = (p: { lang: string | null }): Lang => (p.lang === "en" ? "en" : "zh");
+  const nameIn = (p: { name: string; en_name: string | null }, lang: Lang) => (lang === "en" && p.en_name) || p.name;
+  const list = (ids: number[], lang: Lang) => {
     const c = copy[lang];
-    const all = recipientIds.map((id) => byId.get(id)).map((p) => (p ? nameIn(p, lang) : "?"));
+    const all = ids.map((id) => byId.get(id)).map((p) => (p ? nameIn(p, lang) : "?"));
     return all.length <= 3 ? all.join(c.sep) : all.slice(0, 3).join(c.sep) + c.andMore(all.length);
   };
+  const ccNote = (lang: Lang) => (ccIds.length ? copy[lang].ccNote(list(ccIds, lang)) : null);
   const site = `夸夸 · ${new URL(config.publicUrl).host}`;
+  const bonus = post.kind === "bonus";
+  const jobs: Promise<unknown>[] = [];
 
-  const jobs = recipientIds.map(async (rid) => {
-    const r = byId.get(rid);
-    if (!r?.open_id) return;
-    const lang = r.lang === "en" ? "en" : "zh";
+  for (const id of recipientIds) {
+    const r = byId.get(id);
+    if (!r?.open_id) continue;
+    const lang = langOf(r);
     const c = copy[lang];
-    const title = post.kind === "bonus" ? c.bonus(nameIn(sender, lang), post.points) : c.kudos(nameIn(sender, lang));
-    await send("open_id", r.open_id, card(title, post, lang, site));
-  });
+    const title = bonus ? c.bonus(nameIn(sender, lang), post.points) : c.kudos(nameIn(sender, lang));
+    jobs.push(send("open_id", r.open_id, card(title, post, lang, [ccNote(lang), site])));
+  }
+  for (const id of ccIds) {
+    const r = byId.get(id);
+    if (!r?.open_id) continue;
+    const lang = langOf(r);
+    const c = copy[lang];
+    const title = bonus ? c.ccBonus(nameIn(sender, lang), list(recipientIds, lang)) : c.ccKudos(nameIn(sender, lang), list(recipientIds, lang));
+    jobs.push(send("open_id", r.open_id, card(title, post, lang, [site], "wathet")));
+  }
   if (sender.open_id) {
-    const lang = sender.lang === "en" ? "en" : "zh";
+    const lang = langOf(sender);
     const c = copy[lang];
-    const many = recipientIds.length > 1;
-    const title = post.kind === "bonus" ? c.sentBonus(names(lang), post.points, many) : c.sentKudos(names(lang));
-    const footer = post.kind === "bonus" && senderRemaining !== undefined ? c.remaining(senderRemaining) : site;
-    jobs.push(send("open_id", sender.open_id, card(title, post, lang, footer)));
+    const title = bonus ? c.sentBonus(list(recipientIds, lang), post.points, recipientIds.length > 1) : c.sentKudos(list(recipientIds, lang));
+    const remaining = bonus && senderRemaining !== undefined ? c.remaining(senderRemaining) : null;
+    jobs.push(send("open_id", sender.open_id, card(title, post, lang, [ccNote(lang), remaining ?? site])));
   }
   if (config.lark.broadcastChatId) {
-    jobs.push(
-      (async () => {
-        const c = copy.zh;
-        const title =
-          post.kind === "bonus" ? c.broadcastBonus(sender.name, names("zh"), post.points) : c.broadcastKudos(sender.name, names("zh"));
-        await send("chat_id", config.lark.broadcastChatId, card(title, post, "zh", ""));
-      })(),
-    );
+    const c = copy.zh;
+    const title = bonus ? c.broadcastBonus(sender.name, list(recipientIds, "zh"), post.points) : c.broadcastKudos(sender.name, list(recipientIds, "zh"));
+    jobs.push(send("chat_id", config.lark.broadcastChatId, card(title, post, "zh", [ccNote("zh")])));
   }
   for (const r of await Promise.allSettled(jobs)) {
     if (r.status === "rejected") log("notify failed:", (r.reason as Error).message);

@@ -29,4 +29,5 @@ export const LIMITS = {
   messageMinBonus: 10,
   commentMax: 500,
   recipientsMax: 20,
+  ccMax: 10,
 };

@@ -29,6 +29,7 @@ type UserRow = {
   lang: string | null;
   joined_at: number | null;
   last_seen_at: number | null;
+  leader_id: number | null;
 };
 
 export type UserDTO = {
@@ -42,13 +43,15 @@ export type UserDTO = {
   active: boolean;
   joinedAt: number | null;
   handle: string | null;
+  leaderId: number | null;
 };
 
 const USER_SELECT = `
   SELECT u.id, u.open_id, u.email, u.name, u.en_name, u.avatar_ver, u.dept_id, u.job_title,
          u.active, u.source, u.lang, u.joined_at, u.last_seen_at,
-         d.name AS dept_name, d.en_name AS dept_en
-  FROM users u LEFT JOIN departments d ON d.id = u.dept_id`;
+         d.name AS dept_name, d.en_name AS dept_en, l.id AS leader_id
+  FROM users u LEFT JOIN departments d ON d.id = u.dept_id
+  LEFT JOIN users l ON l.open_id = u.leader_open_id AND l.active = 1`;
 
 export function toUser(r: UserRow): UserDTO {
   return {
@@ -62,6 +65,7 @@ export function toUser(r: UserRow): UserDTO {
     active: r.active === 1,
     joinedAt: r.joined_at,
     handle: r.email ? r.email.split("@")[0]! : null,
+    leaderId: r.leader_id ?? null,
   };
 }
 
@@ -167,6 +171,7 @@ export type PostDTO = {
   kind: "kudos" | "bonus";
   senderId: number;
   recipientIds: number[];
+  ccIds: number[];
   message: string;
   valueTag: string | null;
   points: number;
@@ -184,6 +189,9 @@ function hydrate(rows: PostRow[], viewer: Viewer) {
   const ids = JSON.stringify(rows.map((r) => r.id));
   const recipients = db
     .query(`SELECT post_id, user_id FROM post_recipients WHERE post_id IN (SELECT value FROM json_each($ids)) ORDER BY rowid`)
+    .all({ ids }) as { post_id: number; user_id: number }[];
+  const cc = db
+    .query(`SELECT post_id, user_id FROM post_cc WHERE post_id IN (SELECT value FROM json_each($ids)) ORDER BY rowid`)
     .all({ ids }) as { post_id: number; user_id: number }[];
   const reactions = db
     .query(
@@ -207,6 +215,7 @@ function hydrate(rows: PostRow[], viewer: Viewer) {
       kind: r.kind,
       senderId: r.sender_id,
       recipientIds: [],
+      ccIds: [],
       message: r.message,
       valueTag: r.value_tag,
       points: r.points,
@@ -220,6 +229,10 @@ function hydrate(rows: PostRow[], viewer: Viewer) {
   });
   for (const { post_id, user_id } of recipients) {
     byPost.get(post_id)!.recipientIds.push(user_id);
+    userIds.add(user_id);
+  }
+  for (const { post_id, user_id } of cc) {
+    byPost.get(post_id)!.ccIds.push(user_id);
     userIds.add(user_id);
   }
   for (const { post_id, emoji, user_id } of reactions) {
@@ -294,6 +307,7 @@ export function postDetail(id: number, viewer: Viewer) {
 export type NewPost = {
   kind: string;
   recipientIds: unknown;
+  ccIds?: unknown;
   message: unknown;
   valueTag?: unknown;
   points?: unknown;
@@ -314,6 +328,15 @@ export function createPost(input: NewPost, viewer: Viewer) {
   if (ids.includes(viewer.id)) throw new HttpError(400, "no_self_thanks");
   const found = usersByIds(ids);
   if (ids.some((id) => !found[id]?.active)) throw new HttpError(400, "recipient_not_found");
+
+  // CC'd people are only notified; anyone already a recipient (or the sender) is dropped.
+  const ccIds = Array.isArray(input.ccIds)
+    ? [...new Set(input.ccIds.map(Number))].filter((n) => n !== viewer.id && !ids.includes(n))
+    : [];
+  if (ccIds.some((n) => !Number.isInteger(n))) throw new HttpError(400, "cc_not_found");
+  if (ccIds.length > LIMITS.ccMax) throw new HttpError(400, "too_many_cc");
+  const ccFound = usersByIds(ccIds);
+  if (ccIds.some((id) => !ccFound[id]?.active)) throw new HttpError(400, "cc_not_found");
 
   let points = 0;
   if (kind === "bonus") {
@@ -336,6 +359,8 @@ export function createPost(input: NewPost, viewer: Viewer) {
     const postId = Number(res.lastInsertRowid);
     const ins = db.query("INSERT INTO post_recipients (post_id, user_id) VALUES ($post, $user)");
     for (const u of ids) ins.run({ post: postId, user: u });
+    const insCc = db.query("INSERT INTO post_cc (post_id, user_id) VALUES ($post, $user)");
+    for (const u of ccIds) insCc.run({ post: postId, user: u });
     return postId;
   }).immediate();
   return id;

@@ -121,6 +121,18 @@ export function PostCard({
         )}
       </div>
 
+      {post.ccIds.length > 0 && (
+        <div className="post-cc">
+          <span className="muted">{t("post.cc")}</span>
+          {post.ccIds.map((id, i) => (
+            <span key={id}>
+              {i > 0 && <span className="sep">{t("post.sep")}</span>}
+              <UserName user={users[id]} />
+            </span>
+          ))}
+        </div>
+      )}
+
       <footer className="post-foot">
         <div className="reactions">
           {post.reactions.map((r) => {

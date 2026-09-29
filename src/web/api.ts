@@ -9,6 +9,7 @@ export type User = {
   active: boolean;
   joinedAt: number | null;
   handle: string | null;
+  leaderId: number | null;
   received?: number;
 };
 
@@ -19,6 +20,7 @@ export type Post = {
   kind: "kudos" | "bonus";
   senderId: number;
   recipientIds: number[];
+  ccIds: number[];
   message: string;
   valueTag: string | null;
   points: number;

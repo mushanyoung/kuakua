@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from "react";
 import confetti from "canvas-confetti";
 import { ChatBubbleLeftRightIcon, GiftIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { BellAlertIcon } from "@heroicons/react/20/solid";
@@ -35,15 +35,15 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   const amounts = me.config.bonusAmounts;
   const [kind, setKind] = useState<"kudos" | "bonus">(prefill?.kind ?? "kudos");
   const [recipientIds, setRecipientIds] = useState<number[]>(prefill?.recipientIds?.filter((id) => id !== me.user.id) ?? []);
-  const [query, setQuery] = useState("");
-  const [focused, setFocused] = useState(false);
-  const [cursor, setCursor] = useState(0);
+  const [ccIds, setCcIds] = useState<number[]>([]);
+  const [showCc, setShowCc] = useState(false);
   const [valueTag, setValueTag] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [points, setPoints] = useState(amounts[0] ?? 10);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const ccRef = useRef<HTMLInputElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
 
@@ -57,12 +57,23 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
     };
   }, []);
 
-  const candidates = useMemo(() => {
-    const pool = (directory?.users ?? []).filter((u) => u.id !== me.user.id && !recipientIds.includes(u.id));
-    if (query.trim()) return pool.filter((u) => matches(u, query)).slice(0, 8);
+  const suggestTo = (pool: User[]) => {
     const mine = pool.filter((u) => u.dept && u.dept === me.user.dept);
-    return [...mine, ...pool.filter((u) => !mine.includes(u))].slice(0, 6);
-  }, [directory, query, recipientIds, me.user]);
+    return [...mine, ...pool.filter((u) => !mine.includes(u))].slice(0, 6).map((user) => ({ user }));
+  };
+  // CC is usually someone's manager: offer the recipients' managers, then mine.
+  const suggestCc = (pool: User[]) => {
+    const byId = new Map(pool.map((u) => [u.id, u]));
+    const out: { user: User; tag?: string }[] = [];
+    const push = (id: number | null | undefined, tag?: string) => {
+      const u = id ? byId.get(id) : undefined;
+      if (u && !out.some((o) => o.user.id === u.id)) out.push({ user: u, tag });
+    };
+    for (const id of recipientIds) push(users[id]?.leaderId, t("composer.theirManager"));
+    push(me.user.leaderId, t("composer.myManager"));
+    for (const u of suggestTo(pool)) push(u.user.id);
+    return out.slice(0, 6);
+  };
 
   const n = recipientIds.length;
   const minAmount = Math.min(...amounts);
@@ -78,21 +89,6 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
       if (affordable) setPoints(affordable);
     }
   }, [n, kind]);
-
-  function add(u: User) {
-    setRecipientIds((ids) => (ids.length >= LIMITS.recipientsMax ? ids : [...ids, u.id]));
-    setQuery("");
-    setCursor(0);
-    searchRef.current?.focus();
-  }
-
-  function onSearchKey(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "ArrowDown") (e.preventDefault(), setCursor((c) => Math.min(c + 1, candidates.length - 1)));
-    else if (e.key === "ArrowUp") (e.preventDefault(), setCursor((c) => Math.max(c - 1, 0)));
-    else if (e.key === "Enter" && candidates[cursor]) (e.preventDefault(), add(candidates[cursor]!));
-    else if (e.key === "Backspace" && !query && n) setRecipientIds((ids) => ids.slice(0, -1));
-    else if (e.key === "Escape" && (query || focused)) (e.stopPropagation(), setQuery(""), searchRef.current?.blur());
-  }
 
   function insertIdea(text: string) {
     setMessage((m) => (m ? `${m}${m.endsWith(" ") || m.endsWith("\n") ? "" : " "}${text}` : text));
@@ -118,7 +114,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
     try {
       const res = await api<PostDetail & { allowance: Allowance }>("/api/posts", {
         method: "POST",
-        body: { kind, recipientIds, message, valueTag, points: kind === "bonus" ? points : 0 },
+        body: { kind, recipientIds, ccIds, message, valueTag, points: kind === "bonus" ? points : 0 },
       });
       mergeUsers(res.users);
       setMe({ ...me, allowance: res.allowance });
@@ -171,57 +167,47 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           </button>
         </div>
 
-        <label className="field-label" htmlFor="composer-to">
-          {t("composer.to")}
-        </label>
-        <div className={`picker ${focused ? "focus" : ""}`} onClick={() => searchRef.current?.focus()}>
-          {recipientIds.map((id) => (
-            <span key={id} className="chip-person">
-              <Avatar user={users[id]} size={22} link={false} />
-              {name(users[id])}
-              <button
-                type="button"
-                aria-label="remove"
-                onClick={(e) => (e.stopPropagation(), setRecipientIds((ids) => ids.filter((x) => x !== id)))}
-              >
-                <XMarkIcon />
-              </button>
-            </span>
-          ))}
-          <input
-            id="composer-to"
-            ref={searchRef}
-            value={query}
-            autoComplete="off"
-            onChange={(e) => (setQuery(e.target.value), setCursor(0))}
-            onKeyDown={onSearchKey}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setTimeout(() => setFocused(false), 120)}
-            placeholder={n ? "" : t("composer.toPlaceholder")}
-          />
-          {focused && (
-            <ul className="picker-list" role="listbox">
-              {candidates.length === 0 && <li className="picker-empty">{directory ? t("composer.noMatch") : t("loading")}</li>}
-              {candidates.map((u, i) => (
-                <li
-                  key={u.id}
-                  role="option"
-                  aria-selected={i === cursor}
-                  className={i === cursor ? "on" : ""}
-                  onPointerDown={(e) => (e.preventDefault(), add(u))}
-                  onPointerEnter={() => setCursor(i)}
-                >
-                  <Avatar user={u} size={32} link={false} />
-                  <span className="pl-name">
-                    <b>{name(u)}</b>
-                    {lang === "zh" && altName(u) && <small>{altName(u)}</small>}
-                  </span>
-                  <span className="pl-dept">{(lang === "en" && u.deptEn) || u.dept || u.handle}</span>
-                </li>
-              ))}
-            </ul>
+        <div className="field-row">
+          <label className="field-label" htmlFor="composer-to">
+            {t("composer.to")}
+          </label>
+          {!showCc && (
+            <button
+              type="button"
+              className="link-btn add-cc"
+              onClick={() => (setShowCc(true), requestAnimationFrame(() => ccRef.current?.focus()))}
+            >
+              + {t("composer.addCc")}
+            </button>
           )}
         </div>
+        <PeoplePicker
+          id="composer-to"
+          value={recipientIds}
+          onChange={setRecipientIds}
+          exclude={ccIds}
+          max={LIMITS.recipientsMax}
+          placeholder={t("composer.toPlaceholder")}
+          inputRef={searchRef}
+          suggest={suggestTo}
+        />
+        {showCc && (
+          <>
+            <label className="field-label" htmlFor="composer-cc">
+              {t("composer.cc")} <small>{t("composer.ccHint")}</small>
+            </label>
+            <PeoplePicker
+              id="composer-cc"
+              value={ccIds}
+              onChange={setCcIds}
+              exclude={recipientIds}
+              max={LIMITS.ccMax}
+              placeholder={t("composer.ccPlaceholder")}
+              inputRef={ccRef}
+              suggest={suggestCc}
+            />
+          </>
+        )}
 
         <div className="field-label">
           {t("composer.why")} <small>{t("composer.optional")}</small>
@@ -297,6 +283,103 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function PeoplePicker({
+  id,
+  value,
+  onChange,
+  exclude,
+  max,
+  placeholder,
+  inputRef,
+  suggest,
+}: {
+  id: string;
+  value: number[];
+  onChange: (ids: number[]) => void;
+  exclude: number[];
+  max: number;
+  placeholder: string;
+  inputRef: RefObject<HTMLInputElement | null>;
+  suggest: (pool: User[]) => { user: User; tag?: string }[];
+}) {
+  const { me, t, lang, directory, users, name } = useApp();
+  const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+  const [cursor, setCursor] = useState(0);
+
+  const pool = (directory?.users ?? []).filter((u) => u.id !== me.user.id && !value.includes(u.id) && !exclude.includes(u.id));
+  const candidates: { user: User; tag?: string }[] = query.trim()
+    ? pool.filter((u) => matches(u, query)).slice(0, 8).map((user) => ({ user }))
+    : suggest(pool);
+
+  function add(u: User) {
+    if (value.length < max) onChange([...value, u.id]);
+    setQuery("");
+    setCursor(0);
+    inputRef.current?.focus();
+  }
+
+  function onKey(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown") (e.preventDefault(), setCursor((c) => Math.min(c + 1, candidates.length - 1)));
+    else if (e.key === "ArrowUp") (e.preventDefault(), setCursor((c) => Math.max(c - 1, 0)));
+    else if (e.key === "Enter" && candidates[cursor]) (e.preventDefault(), add(candidates[cursor]!.user));
+    else if (e.key === "Backspace" && !query && value.length) onChange(value.slice(0, -1));
+    else if (e.key === "Escape" && (query || focused)) (e.stopPropagation(), setQuery(""), inputRef.current?.blur());
+  }
+
+  return (
+    <div className={`picker ${focused ? "focus" : ""}`} onClick={() => inputRef.current?.focus()}>
+      {value.map((uid) => (
+        <span key={uid} className="chip-person">
+          <Avatar user={users[uid]} size={22} link={false} />
+          {name(users[uid])}
+          <button
+            type="button"
+            aria-label="remove"
+            onClick={(e) => (e.stopPropagation(), onChange(value.filter((x) => x !== uid)))}
+          >
+            <XMarkIcon />
+          </button>
+        </span>
+      ))}
+      <input
+        id={id}
+        ref={inputRef}
+        value={query}
+        autoComplete="off"
+        onChange={(e) => (setQuery(e.target.value), setCursor(0))}
+        onKeyDown={onKey}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setTimeout(() => setFocused(false), 120)}
+        placeholder={value.length ? "" : placeholder}
+      />
+      {focused && (
+        <ul className="picker-list" role="listbox">
+          {candidates.length === 0 && <li className="picker-empty">{directory ? t("composer.noMatch") : t("loading")}</li>}
+          {candidates.map(({ user: u, tag }, i) => (
+            <li
+              key={u.id}
+              role="option"
+              aria-selected={i === cursor}
+              className={i === cursor ? "on" : ""}
+              onPointerDown={(e) => (e.preventDefault(), add(u))}
+              onPointerEnter={() => setCursor(i)}
+            >
+              <Avatar user={u} size={32} link={false} />
+              <span className="pl-name">
+                <b>{name(u)}</b>
+                {lang === "zh" && altName(u) && <small>{altName(u)}</small>}
+              </span>
+              {tag && <span className="pl-tag">{tag}</span>}
+              <span className="pl-dept">{(lang === "en" && u.deptEn) || u.dept || u.handle}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

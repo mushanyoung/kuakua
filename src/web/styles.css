@@ -1330,6 +1330,29 @@ button.value-chip:hover {
     background-position: 0 0;
   }
 }
+.post-cc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 4px;
+  margin-top: 10px;
+  padding-left: 30px;
+  font-size: 13px;
+}
+.post-cc .muted {
+  margin-right: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.post-cc .user-name {
+  font-weight: 600;
+  color: var(--text-2);
+}
+.post-cc .sep {
+  color: var(--text-3);
+}
 .post-foot {
   display: flex;
   align-items: center;
@@ -1668,6 +1691,28 @@ button.value-chip:hover {
   margin-left: 4px;
   font-weight: 500;
   color: var(--text-3);
+}
+.field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.add-cc {
+  font-size: 12.5px;
+  text-decoration: none;
+  color: var(--text-3);
+}
+.add-cc:hover {
+  color: #ffc1ce;
+}
+.pl-tag {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-on-warm);
+  background: var(--grad-cool);
 }
 .picker {
   position: relative;
@@ -2672,7 +2717,8 @@ button.value-chip:hover {
     padding: 14px 16px;
   }
   .post-body,
-  .post-tags {
+  .post-tags,
+  .post-cc {
     padding-left: 22px;
   }
   .quote-mark {
