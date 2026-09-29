@@ -1,6 +1,6 @@
-import { StrictMode, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Cog6ToothIcon, HomeIcon, PlusIcon, TrophyIcon, UserGroupIcon } from "@heroicons/react/24/outline";
+import { HomeIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { api, ApiError, type Me } from "./api";
 import { Composer } from "./components/Composer";
 import { Avatar, HeartMark, Logo } from "./components/ui";
@@ -11,17 +11,17 @@ import { People } from "./pages/People";
 import { PostPage } from "./pages/PostPage";
 import { ProfilePage } from "./pages/Profile";
 import { Wall } from "./pages/Wall";
-import { Link, match, useLocation } from "./router";
+import { Link, match, navigate, useLocation } from "./router";
 import { AppProvider, LANG_KEY, useApp, type ComposerPrefill } from "./state";
 
 function Nav() {
   const { t, lang, setLang, me, openComposer } = useApp();
   const { path } = useLocation();
+  // Leaderboard and people directory are admin-only and reached from the admin page.
+  const adminArea = path === "/admin" || path === "/leaderboard" || path === "/people";
   const links = [
-    { to: "/", label: t("nav.wall"), icon: HomeIcon, on: path === "/" || path.startsWith("/k/") },
-    { to: "/leaderboard", label: t("nav.leaderboard"), icon: TrophyIcon, on: path === "/leaderboard" },
-    { to: "/people", label: t("nav.people"), icon: UserGroupIcon, on: path === "/people" },
-    ...(me.isAdmin ? [{ to: "/admin", label: t("nav.admin"), icon: Cog6ToothIcon, on: path === "/admin" }] : []),
+    { to: "/", label: t("nav.wall"), on: path === "/" || path.startsWith("/k/") },
+    ...(me.isAdmin ? [{ to: "/admin", label: t("nav.admin"), on: adminArea }] : []),
   ];
   return (
     <>
@@ -51,19 +51,13 @@ function Nav() {
         </div>
       </header>
       <nav className="tabbar">
-        {links.slice(0, 2).map((l) => (
-          <Link key={l.to} to={l.to} className={l.on ? "on" : ""}>
-            <l.icon />
-            <span>{l.label}</span>
-          </Link>
-        ))}
+        <Link to="/" className={links[0]!.on ? "on" : ""}>
+          <HomeIcon />
+          <span>{t("nav.wall")}</span>
+        </Link>
         <button type="button" className="tab-send" onClick={() => openComposer()} aria-label={t("cta.send")}>
           <PlusIcon />
         </button>
-        <Link to="/people" className={path === "/people" ? "on" : ""}>
-          <UserGroupIcon />
-          <span>{t("nav.people")}</span>
-        </Link>
         <Link to={`/u/${me.user.id}`} className={path === `/u/${me.user.id}` ? "on" : ""}>
           <Avatar user={me.user} size={24} link={false} />
           <span>{t("nav.me")}</span>
@@ -73,13 +67,18 @@ function Nav() {
   );
 }
 
+function Redirect({ to }: { to: string }) {
+  useEffect(() => navigate(to, { replace: true }), [to]);
+  return null;
+}
+
 function Routes() {
   const { path } = useLocation();
-  const { t } = useApp();
+  const { t, me } = useApp();
   let m: Record<string, string> | null;
   if (path === "/") return <Wall />;
-  if (path === "/leaderboard") return <Leaderboard />;
-  if (path === "/people") return <People />;
+  if (path === "/leaderboard") return me.isAdmin ? <Leaderboard /> : <Redirect to="/" />;
+  if (path === "/people") return me.isAdmin ? <People /> : <Redirect to="/" />;
   if (path === "/admin") return <Admin />;
   if ((m = match("/u/:id", path))) return <ProfilePage key={m.id} id={m.id!} />;
   if ((m = match("/k/:id", path))) return <PostPage key={m.id} id={m.id!} />;

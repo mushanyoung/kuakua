@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { type Users } from "../api";
 import { Avatar, Empty, Segmented, Spinner, UserName } from "../components/ui";
+import { ArrowLeftIcon } from "@heroicons/react/20/solid";
+import { Link } from "../router";
 import { useApp, useApi } from "../state";
 
 type Range = "month" | "quarter" | "year" | "all";
@@ -22,6 +24,9 @@ export function Leaderboard() {
 
   return (
     <div className="page">
+      <Link to="/admin" className="back-link">
+        <ArrowLeftIcon className="ic" /> {t("admin.back")}
+      </Link>
       <header className="page-head">
         <div>
           <h1 className="page-title">{t("lb.title")}</h1>

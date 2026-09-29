@@ -2437,6 +2437,52 @@ button.value-chip:hover {
 }
 
 /* admin */
+.admin-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.admin-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--line);
+  transition: border-color 0.2s, transform 0.25s var(--ease);
+}
+.admin-link:hover {
+  border-color: rgba(255, 107, 139, 0.4);
+  transform: translateY(-2px);
+}
+.admin-link span {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.admin-link b {
+  font-family: var(--font-display);
+  font-size: 17px;
+}
+.admin-link small {
+  color: var(--text-3);
+  font-size: 13px;
+}
+.admin-link .ic {
+  color: var(--text-3);
+}
+.admin-link-ic {
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  flex: none;
+  border-radius: 12px;
+  color: var(--ink-on-warm);
+  background: var(--grad-warm);
+}
 .admin-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
@@ -2679,8 +2725,10 @@ button.value-chip:hover {
     bottom: calc(10px + env(safe-area-inset-bottom));
     z-index: 60;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     align-items: center;
+    width: min(320px, calc(100% - 24px));
+    margin: 0 auto;
     height: 64px;
     padding: 0 6px;
     border-radius: 24px;
@@ -2807,7 +2855,8 @@ button.value-chip:hover {
   .profile-stats {
     margin: 20px 18px;
   }
-  .admin-grid {
+  .admin-grid,
+  .admin-links {
     grid-template-columns: 1fr;
   }
 }

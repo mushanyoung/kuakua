@@ -3,6 +3,7 @@ import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { altName } from "../api";
 import { Avatar, Empty, Spinner } from "../components/ui";
 import { Link, navigate } from "../router";
+import { ArrowLeftIcon } from "@heroicons/react/20/solid";
 import { useApp } from "../state";
 
 export function People() {
@@ -34,6 +35,9 @@ export function People() {
 
   return (
     <div className="page">
+      <Link to="/admin" className="back-link">
+        <ArrowLeftIcon className="ic" /> {t("admin.back")}
+      </Link>
       <header className="page-head">
         <div>
           <h1 className="page-title">{t("people.title")}</h1>

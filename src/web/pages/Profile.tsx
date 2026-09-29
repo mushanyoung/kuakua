@@ -3,6 +3,7 @@ import { altName, type User, type Users } from "../api";
 import { Feed } from "../components/Feed";
 import { Avatar, CountUp, Empty, Segmented, Spinner, ValueChip } from "../components/ui";
 import { errorText } from "../i18n";
+import { Link } from "../router";
 import { useApp, useApi } from "../state";
 import { AllowanceRing } from "./Wall";
 
@@ -42,7 +43,14 @@ export function ProfilePage({ id }: { id: string }) {
           </div>
           <div className="profile-cta">
             {isMe ? (
-              <span className="you-tag">{t("profile.you")}</span>
+              <span className="row-gap">
+                <span className="you-tag">{t("profile.you")}</span>
+                {me.isAdmin && (
+                  <Link to="/admin" className="btn soft sm">
+                    {t("nav.admin")}
+                  </Link>
+                )}
+              </span>
             ) : (
               <button type="button" className="btn primary" onClick={() => openComposer({ recipientIds: [u.id] })}>
                 {t("profile.thank")}

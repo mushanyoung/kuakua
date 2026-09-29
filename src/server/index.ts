@@ -150,11 +150,14 @@ const server = Bun.serve({
 
     "/api/overview": { GET: api(() => store.overview()) },
     "/api/leaderboard": {
-      GET: api(({ url }) => {
-        const range = url.searchParams.get("range") as Range;
-        const type = url.searchParams.get("type") === "given" ? "given" : "received";
-        return store.leaderboard(store.RANGES.includes(range) ? range : "month", type);
-      }),
+      GET: api(
+        ({ url }) => {
+          const range = url.searchParams.get("range") as Range;
+          const type = url.searchParams.get("type") === "given" ? "given" : "received";
+          return store.leaderboard(store.RANGES.includes(range) ? range : "month", type);
+        },
+        { admin: true },
+      ),
     },
     "/api/suggestions": { GET: api(({ viewer }) => store.suggestions(viewer)) },
 

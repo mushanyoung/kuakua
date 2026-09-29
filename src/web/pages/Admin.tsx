@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownTrayIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
+import { ArrowDownTrayIcon, ArrowPathIcon, ChevronRightIcon, TrophyIcon, UserGroupIcon } from "@heroicons/react/24/outline";
 import { api, type Users } from "../api";
 import { Avatar, Empty, Spinner, UserName } from "../components/ui";
 import { errorText, relativeTime } from "../i18n";
+import { Link } from "../router";
 import { useApp, useApi } from "../state";
 
 type Run = { id: number; trigger: string; started_at: number; finished_at: number | null; ok: number | null; users_seen: number | null; users_active: number | null; avatars_updated: number | null; error: string | null };
@@ -58,6 +59,24 @@ export function Admin() {
       <header className="page-head">
         <h1 className="page-title">{t("admin.title")}</h1>
       </header>
+      <div className="admin-links">
+        <Link to="/leaderboard" className="admin-link">
+          <TrophyIcon className="admin-link-ic" />
+          <span>
+            <b>{t("nav.leaderboard")}</b>
+            <small>{t("admin.leaderboardDesc")}</small>
+          </span>
+          <ChevronRightIcon className="ic" />
+        </Link>
+        <Link to="/people" className="admin-link">
+          <UserGroupIcon className="admin-link-ic" />
+          <span>
+            <b>{t("nav.people")}</b>
+            <small>{t("admin.peopleDesc")}</small>
+          </span>
+          <ChevronRightIcon className="ic" />
+        </Link>
+      </div>
       <div className="admin-grid">
         <section className="side-card">
           <div className="side-head">

@@ -97,7 +97,7 @@ export function Wall() {
         </main>
         <aside className="wall-side">
           <MeCard />
-          <TopThisMonth />
+          {me.isAdmin && <TopThisMonth />}
           <Suggestions />
         </aside>
       </div>

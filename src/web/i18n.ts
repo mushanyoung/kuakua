@@ -116,6 +116,9 @@ const zh = {
   "profile.noSupporters": "还没有人感谢过 TA",
 
   "admin.title": "管理",
+  "admin.back": "返回管理",
+  "admin.leaderboardDesc": "最受感谢 / 最会夸人，按月、季度、年查看",
+  "admin.peopleDesc": "全部同事和他们收到的感谢",
   "admin.sync": "Lark 通讯录同步",
   "admin.syncNow": "立即同步",
   "admin.syncing": "同步中…",
@@ -278,6 +281,9 @@ const en: Record<Key, string> = {
   "profile.noSupporters": "No one has thanked them yet",
 
   "admin.title": "Admin",
+  "admin.back": "Back to admin",
+  "admin.leaderboardDesc": "Most appreciated / most generous, by month, quarter or year",
+  "admin.peopleDesc": "Everyone and the thanks they've received",
   "admin.sync": "Lark directory sync",
   "admin.syncNow": "Sync now",
   "admin.syncing": "Syncing…",
