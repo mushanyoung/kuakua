@@ -39,8 +39,8 @@ export const config = {
   },
 
   bonus: {
-    monthlyAllowance: num(env.BONUS_MONTHLY_ALLOWANCE, 100),
-    amounts: (env.BONUS_AMOUNTS ?? "10,20,50")
+    monthlyAllowance: num(env.BONUS_MONTHLY_ALLOWANCE, 10),
+    amounts: (env.BONUS_AMOUNTS ?? "1,2,5")
       .split(",")
       .map((s) => Number(s.trim()))
       .filter((n) => Number.isInteger(n) && n > 0),

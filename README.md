@@ -67,7 +67,7 @@ bun run typecheck
 
 ## Peer Bonus 规则（可在 .env.production 调整）
 
-- 每人每月额度 `BONUS_MONTHLY_ALLOWANCE`（默认 100），按 `APP_TIMEZONE`（默认北京时间）每月 1 日重置
-- 单次可选积分 `BONUS_AMOUNTS`（默认 10 / 20 / 50，按人计，多人时乘以人数）
+- 每人每月额度 `BONUS_MONTHLY_ALLOWANCE`（默认 10），按 `APP_TIMEZONE`（默认北京时间）每月 1 日重置
+- 单次可选积分 `BONUS_AMOUNTS`（默认 1 / 2 / 5，按人计，多人时乘以人数）
 - Peer Bonus 留言至少 10 个字；不能发给自己
 - 发送者可以在当月删除自己的感谢（积分退回），管理员可以删除任意一条

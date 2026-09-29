@@ -117,7 +117,7 @@ for (const at of times) {
     if (r !== sender) recipients.add(r);
   }
   const bonus = rand() < 0.28;
-  const points = bonus ? pick([10, 20, 50]) : 0;
+  const points = bonus ? pick([1, 2, 5]) : 0;
   const res = insertPost.run({
     kind: bonus ? "bonus" : "kudos",
     sender,
