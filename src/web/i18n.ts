@@ -8,10 +8,8 @@ const zh = {
   "nav.admin": "管理",
   "cta.send": "夸一下",
 
-  "hero.eyebrow": "感谢正在流动",
   "hero.title1": "每一份用心",
   "hero.title2": "都值得被看见",
-  "hero.sub": "给同事发一个 Kudos，或者一份 Peer Bonus。一句具体的谢谢，会被放大成整个团队的能量。",
   "hero.cta": "送出一份感谢",
   "hero.graphHint": "最近的感谢 · 点头像看看 TA",
   "stats.posts": "本月感谢",
@@ -83,9 +81,6 @@ const zh = {
   "side.resets": "{date} 重置",
   "side.top": "本月最受感谢",
   "side.viewAll": "完整榜单",
-  "side.suggest": "等你来夸",
-  "side.suggestSub": "最近还没怎么被夸的同事",
-  "side.new": "新同事",
   "side.thank": "夸 TA",
   "side.noTop": "本月还没有感谢，快来做第一个",
 
@@ -182,10 +177,8 @@ const en: Record<Key, string> = {
   "nav.admin": "Admin",
   "cta.send": "Send thanks",
 
-  "hero.eyebrow": "Gratitude in motion",
   "hero.title1": "Great work",
   "hero.title2": "deserves to be seen",
-  "hero.sub": "Send a colleague kudos or a Peer Bonus. One specific thank-you, amplified into energy for the whole team.",
   "hero.cta": "Send some thanks",
   "hero.graphHint": "Recent thanks · tap someone to visit",
   "stats.posts": "This month",
@@ -257,9 +250,6 @@ const en: Record<Key, string> = {
   "side.resets": "Resets {date}",
   "side.top": "Most thanked this month",
   "side.viewAll": "Full leaderboard",
-  "side.suggest": "Waiting for your thanks",
-  "side.suggestSub": "Colleagues who could use some love",
-  "side.new": "New",
   "side.thank": "Thank",
   "side.noTop": "No thanks yet this month — be the first",
 

@@ -518,23 +518,6 @@ export function profile(userId: number) {
   return { user: users[userId]!, stats: { received, sent }, values, supporters, users };
 }
 
-export function suggestions(viewer: Viewer) {
-  const since = Date.now() - 30 * 86400_000;
-  const rows = db
-    .query(
-      `${USER_SELECT}
-       WHERE u.active = 1 AND u.id != $me AND u.source = 'lark'
-       ORDER BY
-         CASE WHEN u.joined_at IS NOT NULL AND u.joined_at > $newSince THEN 0 ELSE 1 END,
-         (SELECT COUNT(*) FROM post_recipients r JOIN posts p ON p.id = r.post_id
-          WHERE r.user_id = u.id AND p.deleted_at IS NULL AND p.created_at > $since),
-         RANDOM()
-       LIMIT 4`,
-    )
-    .all({ me: viewer.id, since, newSince: Date.now() - 45 * 86400_000 }) as UserRow[];
-  return rows.map(toUser);
-}
-
 // ---------------------------------------------------------------- admin
 
 export function bonusReport(period: string) {

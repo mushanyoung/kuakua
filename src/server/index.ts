@@ -159,7 +159,6 @@ const server = Bun.serve({
         { admin: true },
       ),
     },
-    "/api/suggestions": { GET: api(({ viewer }) => store.suggestions(viewer)) },
 
     "/api/admin/status": {
       GET: api(() => ({ ...store.syncStatus(), running: syncRunning(), lark: larkEnabled(), periods: store.bonusPeriods() }), {

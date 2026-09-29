@@ -1,5 +1,5 @@
 import { ArrowRightIcon } from "@heroicons/react/20/solid";
-import { type User, type Users } from "../api";
+import { type Users } from "../api";
 import { Constellation, type GraphEdge } from "../components/Constellation";
 import { Feed } from "../components/Feed";
 import { Avatar, CountUp, UserName } from "../components/ui";
@@ -25,14 +25,10 @@ export function Wall() {
     <>
       <section className="hero">
         <div className="hero-copy">
-          <div className="eyebrow">
-            <span className="live-dot" /> {t("hero.eyebrow")}
-          </div>
           <h1 className={`hero-title ${lang}`}>
             <span>{t("hero.title1")}</span>
             <span className="grad">{t("hero.title2")}</span>
           </h1>
-          <p className="hero-sub">{t("hero.sub")}</p>
           <div className="hero-actions">
             <button type="button" className="btn primary lg" onClick={() => openComposer()}>
               {t("hero.cta")} <ArrowRightIcon className="ic" />
@@ -98,7 +94,6 @@ export function Wall() {
         <aside className="wall-side">
           <MeCard />
           {me.isAdmin && <TopThisMonth />}
-          <Suggestions />
         </aside>
       </div>
     </>
@@ -195,39 +190,6 @@ function TopThisMonth() {
           </li>
         ))}
       </ol>
-    </section>
-  );
-}
-
-function Suggestions() {
-  const { t, lang, name, openComposer, feedVersion } = useApp();
-  const s = useApi<User[]>("/api/suggestions", [feedVersion]);
-  if (!s.data?.length) return null;
-  return (
-    <section className="side-card">
-      <div className="side-head">
-        <h3>{t("side.suggest")}</h3>
-      </div>
-      <p className="muted small side-sub">{t("side.suggestSub")}</p>
-      <ul className="suggest">
-        {s.data.map((u) => (
-          <li key={u.id}>
-            <Avatar user={u} size={36} />
-            <div className="suggest-name">
-              <Link to={`/u/${u.id}`}>{name(u)}</Link>
-              <small className="muted">
-                {u.joinedAt && Date.now() - u.joinedAt < 45 * 86400_000 ? (
-                  <span className="new-tag">{t("side.new")}</span>
-                ) : null}
-                {(lang === "en" && u.deptEn) || u.dept || u.title}
-              </small>
-            </div>
-            <button type="button" className="btn soft sm" onClick={() => openComposer({ recipientIds: [u.id] })}>
-              {t("side.thank")}
-            </button>
-          </li>
-        ))}
-      </ul>
     </section>
   );
 }
