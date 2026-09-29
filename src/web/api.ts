@@ -40,7 +40,7 @@ export type Me = {
   isAdmin: boolean;
   lang: "zh" | "en" | null;
   allowance: Allowance;
-  config: { monthlyAllowance: number; bonusAmounts: number[]; lark: boolean; timezone: string };
+  config: { monthlyAllowance: number; bonusPoints: number; lark: boolean; timezone: string };
 };
 
 export type Feed = { posts: Post[]; users: Users; nextCursor: number | null };

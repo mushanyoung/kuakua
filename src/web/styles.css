@@ -1844,34 +1844,26 @@ button.value-chip:hover {
   border: 1px solid rgba(255, 210, 122, 0.22);
   animation: rise 0.3s var(--ease-out);
 }
-.amounts {
+.bonus-box {
   display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
+  align-items: center;
+  gap: 14px;
 }
-.amount {
-  flex: 1;
-  height: 44px;
-  border-radius: 14px;
+.bonus-points {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 800;
-  color: #ffe2a6;
-  background: rgba(255, 210, 122, 0.08);
-  border: 1px solid rgba(255, 210, 122, 0.25);
-  transition: background 0.2s, box-shadow 0.25s, transform 0.18s var(--ease);
-}
-.amount:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-.amount.on {
   color: var(--ink-on-warm);
   background: var(--grad-gold);
   box-shadow: 0 10px 26px -12px rgba(255, 210, 122, 0.9);
-}
-.amount:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
 }
 .bonus-total {
   font-family: var(--font-mono);

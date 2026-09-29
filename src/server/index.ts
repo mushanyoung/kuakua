@@ -58,7 +58,7 @@ function me(viewer: Viewer) {
     allowance: store.allowance(viewer.id),
     config: {
       monthlyAllowance: config.bonus.monthlyAllowance,
-      bonusAmounts: config.bonus.amounts,
+      bonusPoints: config.bonus.points,
       lark: larkEnabled(),
       timezone: config.timezone,
     },

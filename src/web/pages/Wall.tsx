@@ -153,7 +153,7 @@ function MeCard() {
           <button
             type="button"
             className="btn gold sm"
-            disabled={a.remaining < Math.min(...me.config.bonusAmounts)}
+            disabled={a.remaining < me.config.bonusPoints}
             onClick={() => openComposer({ kind: "bonus" })}
           >
             {t("post.bonus")}

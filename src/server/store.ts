@@ -310,7 +310,6 @@ export type NewPost = {
   ccIds?: unknown;
   message: unknown;
   valueTag?: unknown;
-  points?: unknown;
 };
 
 export function createPost(input: NewPost, viewer: Viewer) {
@@ -338,12 +337,7 @@ export function createPost(input: NewPost, viewer: Viewer) {
   const ccFound = usersByIds(ccIds);
   if (ccIds.some((id) => !ccFound[id]?.active)) throw new HttpError(400, "cc_not_found");
 
-  let points = 0;
-  if (kind === "bonus") {
-    points = Number(input.points);
-    if (!Number.isInteger(points) || points <= 0) throw new HttpError(400, "bad_points");
-    if (points > config.bonus.monthlyAllowance) throw new HttpError(400, "bad_points");
-  }
+  const points = kind === "bonus" ? config.bonus.points : 0;
   const cost = points * ids.length;
   const now = Date.now();
   const period = periodOf(now);

@@ -40,10 +40,8 @@ export const config = {
 
   bonus: {
     monthlyAllowance: num(env.BONUS_MONTHLY_ALLOWANCE, 10),
-    amounts: (env.BONUS_AMOUNTS ?? "1,2,5")
-      .split(",")
-      .map((s) => Number(s.trim()))
-      .filter((n) => Number.isInteger(n) && n > 0),
+    // Fixed points per recipient; the sender doesn't choose an amount.
+    points: Math.max(1, Math.floor(num(env.BONUS_POINTS, 1))),
   },
 };
 

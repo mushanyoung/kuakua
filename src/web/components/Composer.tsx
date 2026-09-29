@@ -32,13 +32,12 @@ function matches(u: User, q: string) {
 export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onClose: () => void }) {
   const { me, setMe, t, lang, loadDirectory, directory, users, name, bumpFeed, toast, mergeUsers } = useApp();
   const allowance = me.allowance;
-  const amounts = me.config.bonusAmounts;
+  const points = me.config.bonusPoints;
   const [kind, setKind] = useState<"kudos" | "bonus">(prefill?.kind ?? "kudos");
   const [recipientIds, setRecipientIds] = useState<number[]>(prefill?.recipientIds?.filter((id) => id !== me.user.id) ?? []);
   const [ccIds, setCcIds] = useState<number[]>([]);
   const [valueTag, setValueTag] = useState<string | null>(null);
   const [message, setMessage] = useState("");
-  const [points, setPoints] = useState(amounts[0] ?? 10);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -75,19 +74,12 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   };
 
   const n = recipientIds.length;
-  const minAmount = Math.min(...amounts);
-  const bonusAvailable = allowance.remaining >= minAmount;
+  const bonusAvailable = allowance.remaining >= points;
   const cost = kind === "bonus" ? points * Math.max(1, n) : 0;
   const tooExpensive = kind === "bonus" && cost > allowance.remaining;
   const tooShort = kind === "bonus" && message.trim().length < LIMITS.messageMinBonus;
   const canSend = n > 0 && message.trim().length > 0 && !tooExpensive && !tooShort && !busy;
 
-  useEffect(() => {
-    if (kind === "bonus" && points * Math.max(1, n) > allowance.remaining) {
-      const affordable = [...amounts].reverse().find((a) => a * Math.max(1, n) <= allowance.remaining);
-      if (affordable) setPoints(affordable);
-    }
-  }, [n, kind]);
 
   function insertIdea(text: string) {
     setMessage((m) => (m ? `${m}${m.endsWith(" ") || m.endsWith("\n") ? "" : " "}${text}` : text));
@@ -113,7 +105,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
     try {
       const res = await api<PostDetail & { allowance: Allowance }>("/api/posts", {
         method: "POST",
-        body: { kind, recipientIds, ccIds, message, valueTag, points: kind === "bonus" ? points : 0 },
+        body: { kind, recipientIds, ccIds, message, valueTag },
       });
       mergeUsers(res.users);
       setMe({ ...me, allowance: res.allowance });
@@ -230,22 +222,9 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
 
         {kind === "bonus" && (
           <div className="bonus-box">
-            <div className="field-label">{t("composer.amount")}</div>
-            <div className="amounts">
-              {amounts.map((a) => (
-                <button
-                  key={a}
-                  type="button"
-                  className={`amount ${points === a ? "on" : ""}`}
-                  disabled={a * Math.max(1, n) > allowance.remaining}
-                  onClick={() => setPoints(a)}
-                >
-                  +{a}
-                </button>
-              ))}
-            </div>
+            <span className="bonus-points">+{points}</span>
             <div className={`bonus-total ${tooExpensive ? "bad" : ""}`}>
-              {t("composer.total", { total: cost, remaining: allowance.remaining })}
+              {t("composer.bonusSummary", { points, total: cost, remaining: allowance.remaining })}
             </div>
           </div>
         )}
