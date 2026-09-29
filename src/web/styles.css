@@ -1126,6 +1126,15 @@ button.value-chip:hover {
   border-color: rgba(255, 255, 255, 0.14);
   box-shadow: 0 20px 50px -30px rgba(255, 107, 139, 0.35);
 }
+.post.linked {
+  cursor: pointer;
+}
+.post.linked :is(.post-body p > span, .recipients, .post-cc > *, .comments) {
+  cursor: auto;
+}
+.post.linked :is(.kind-badge, .points-badge, span.value-chip) {
+  cursor: default;
+}
 .post.bonus {
   border: 1px solid transparent;
   background: linear-gradient(180deg, #1c1622, #15111d) padding-box,

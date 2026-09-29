@@ -141,7 +141,7 @@ export function Feed({
       )}
       {posts?.length === 0 && <Empty title={t("feed.empty")} sub={t("feed.emptySub")} action={emptyAction} />}
       <div className="post-list">
-        {posts?.map((p) => <PostCard key={p.id} post={p} onChange={update} onDeleted={remove} fresh={fresh.has(p.id)} />)}
+        {posts?.map((p) => <PostCard key={p.id} post={p} onChange={update} onDeleted={remove} fresh={fresh.has(p.id)} linked />)}
       </div>
       <div ref={sentinel} />
       {posts && posts.length > 0 && (

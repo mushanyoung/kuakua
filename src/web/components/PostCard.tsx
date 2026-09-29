@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import {
   ArrowRightIcon,
   ChatBubbleOvalLeftIcon,
@@ -11,7 +11,7 @@ import {
 import { SparklesIcon } from "@heroicons/react/20/solid";
 import { api, type Comment, type Feed, type Post, type PostDetail, type Users } from "../api";
 import { errorText, relativeTime } from "../i18n";
-import { Link } from "../router";
+import { Link, navigate } from "../router";
 import { useApp } from "../state";
 import { LIMITS, PLUS_ONE, REACTIONS } from "../../shared/values";
 import { Avatar, AvatarStack, UserName, ValueChip } from "./ui";
@@ -22,18 +22,22 @@ export function PostCard({
   onDeleted,
   openComments = false,
   fresh = false,
+  linked = false,
 }: {
   post: Post;
   onChange: (p: Post) => void;
   onDeleted: (id: number) => void;
   openComments?: boolean;
   fresh?: boolean;
+  /** Clicking the card's empty space opens the post page. */
+  linked?: boolean;
 }) {
   const { users, t, lang, me, mergeUsers, toast, name, refreshMe } = useApp();
   const [picker, setPicker] = useState(false);
   const [menu, setMenu] = useState(false);
   const [showComments, setShowComments] = useState(openComments);
   const [burst, setBurst] = useState<string | null>(null);
+  const popoverWasOpen = useRef(false);
   const sender = users[post.senderId];
   const recipients = post.recipientIds.map((id) => users[id]);
   const bonus = post.kind === "bonus";
@@ -72,11 +76,28 @@ export function PostCard({
     navigator.clipboard?.writeText(`${location.origin}/k/${post.id}`).then(() => toast(t("post.copied")));
   }
 
+  function openFromBlank(e: MouseEvent<HTMLElement>) {
+    const el = e.target as Element;
+    // A click that just dismissed a popover shouldn't also navigate away.
+    if (popoverWasOpen.current) return;
+    if (el.closest("a, button, input, textarea, .popover, .comments, .avatar, .kind-badge, .points-badge, .value-chip")) return;
+    // Text stays selectable: a drag-select or a click on the words themselves doesn't count.
+    if (window.getSelection()?.toString()) return;
+    if (!el.closest('[aria-hidden="true"]') && overText(el, e.clientX, e.clientY)) return;
+    const to = `/k/${post.id}`;
+    if (e.metaKey || e.ctrlKey) window.open(to, "_blank", "noopener");
+    else navigate(to);
+  }
+
   // Up to 3 recipients fit in the header; a bigger group gets its own row so nobody is hidden behind "+N".
   const group = recipients.length > 3;
 
   return (
-    <article className={`post ${bonus ? "bonus" : ""} ${fresh ? "fresh" : ""}`}>
+    <article
+      className={`post ${bonus ? "bonus" : ""} ${fresh ? "fresh" : ""} ${linked ? "linked" : ""}`}
+      onPointerDown={linked ? () => (popoverWasOpen.current = picker || menu) : undefined}
+      onClick={linked ? openFromBlank : undefined}
+    >
       {bonus && <div className="post-glow" aria-hidden="true" />}
       <header className="post-head">
         <div className="post-people">
@@ -128,7 +149,9 @@ export function PostCard({
         <span className="quote-mark" aria-hidden="true">
           “
         </span>
-        <p>{post.message}</p>
+        <p>
+          <span>{post.message}</span>
+        </p>
       </div>
 
       <div className="post-tags">
@@ -231,6 +254,16 @@ export function PostCard({
       {showComments && <Comments post={post} onCount={(n) => onChange({ ...post, commentCount: n })} />}
     </article>
   );
+}
+
+/** Whether (x, y) lands on one of el's own text glyphs rather than the empty part of its box. */
+function overText(el: Element, x: number, y: number) {
+  const range = document.createRange();
+  return [...el.childNodes].some((n) => {
+    if (n.nodeType !== Node.TEXT_NODE || !n.textContent?.trim()) return false;
+    range.selectNodeContents(n);
+    return [...range.getClientRects()].some((r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+  });
 }
 
 function Popover({ children, onClose, className }: { children: ReactNode; onClose: () => void; className: string }) {
