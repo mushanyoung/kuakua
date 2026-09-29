@@ -122,8 +122,9 @@ const server = Bun.serve({
         const id = store.createPost(input as unknown as store.NewPost, viewer);
         const detail = store.postDetail(id, viewer);
         const p = detail.post;
-        notifyPost(p, p.senderId, p.recipientIds).catch((e) => console.error("notify", e));
-        return { ...detail, allowance: store.allowance(viewer.id) };
+        const allowance = store.allowance(viewer.id);
+        notifyPost(p, p.senderId, p.recipientIds, allowance.remaining).catch((e) => console.error("notify", e));
+        return { ...detail, allowance };
       }),
     },
     "/api/posts/:id": {

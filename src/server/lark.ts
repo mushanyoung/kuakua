@@ -319,6 +319,10 @@ const copy = {
     open: "去看看",
     broadcastKudos: (s: string, r: string) => `${s} 夸了 ${r}`,
     broadcastBonus: (s: string, r: string, p: number) => `${s} 给 ${r} 发了 Peer Bonus · 每人 +${p}`,
+    sentKudos: (r: string) => `你夸了 ${r}`,
+    sentBonus: (r: string, p: number, many: boolean) => `你给 ${r} 发了 Peer Bonus · ${many ? "每人 " : ""}+${p}`,
+    remaining: (n: number) => `本月剩余 ${n} 积分`,
+    andMore: (n: number) => `等 ${n} 人`,
     sep: "、",
   },
   en: {
@@ -327,6 +331,10 @@ const copy = {
     open: "Open",
     broadcastKudos: (s: string, r: string) => `${s} gave kudos to ${r}`,
     broadcastBonus: (s: string, r: string, p: number) => `${s} sent ${r} a Peer Bonus · +${p} each`,
+    sentKudos: (r: string) => `You gave kudos to ${r}`,
+    sentBonus: (r: string, p: number, many: boolean) => `You sent ${r} a Peer Bonus · +${p}${many ? " each" : ""}`,
+    remaining: (n: number) => `${n} pts left this month`,
+    andMore: (n: number) => ` and ${n} others`,
     sep: ", ",
   },
 };
@@ -358,7 +366,9 @@ async function send(receiveIdType: "open_id" | "chat_id", receiveId: string, con
   });
 }
 
-export async function notifyPost(post: NotifyPost, senderId: number, recipientIds: number[]) {
+// Recipients get "X thanked you"; the sender gets a receipt "you thanked X, Y";
+// optionally the whole thing is broadcast to a group chat.
+export async function notifyPost(post: NotifyPost, senderId: number, recipientIds: number[], senderRemaining?: number) {
   if (!larkEnabled() || !config.lark.notify) return;
   const people = db
     .query("SELECT id, name, en_name, open_id, lang FROM users WHERE id IN (SELECT value FROM json_each($ids))")
@@ -373,6 +383,12 @@ export async function notifyPost(post: NotifyPost, senderId: number, recipientId
   const sender = byId.get(senderId);
   if (!sender) return;
   const nameIn = (p: { name: string; en_name: string | null }, lang: "zh" | "en") => (lang === "en" && p.en_name) || p.name;
+  const names = (lang: "zh" | "en") => {
+    const c = copy[lang];
+    const all = recipientIds.map((id) => byId.get(id)).map((p) => (p ? nameIn(p, lang) : "?"));
+    return all.length <= 3 ? all.join(c.sep) : all.slice(0, 3).join(c.sep) + c.andMore(all.length);
+  };
+  const site = `夸夸 · ${new URL(config.publicUrl).host}`;
 
   const jobs = recipientIds.map(async (rid) => {
     const r = byId.get(rid);
@@ -380,14 +396,22 @@ export async function notifyPost(post: NotifyPost, senderId: number, recipientId
     const lang = r.lang === "en" ? "en" : "zh";
     const c = copy[lang];
     const title = post.kind === "bonus" ? c.bonus(nameIn(sender, lang), post.points) : c.kudos(nameIn(sender, lang));
-    await send("open_id", r.open_id, card(title, post, lang, `夸夸 · ${new URL(config.publicUrl).host}`));
+    await send("open_id", r.open_id, card(title, post, lang, site));
   });
+  if (sender.open_id) {
+    const lang = sender.lang === "en" ? "en" : "zh";
+    const c = copy[lang];
+    const many = recipientIds.length > 1;
+    const title = post.kind === "bonus" ? c.sentBonus(names(lang), post.points, many) : c.sentKudos(names(lang));
+    const footer = post.kind === "bonus" && senderRemaining !== undefined ? c.remaining(senderRemaining) : site;
+    jobs.push(send("open_id", sender.open_id, card(title, post, lang, footer)));
+  }
   if (config.lark.broadcastChatId) {
     jobs.push(
       (async () => {
         const c = copy.zh;
-        const names = recipientIds.map((id) => byId.get(id)?.name ?? "?").join(c.sep);
-        const title = post.kind === "bonus" ? c.broadcastBonus(sender.name, names, post.points) : c.broadcastKudos(sender.name, names);
+        const title =
+          post.kind === "bonus" ? c.broadcastBonus(sender.name, names("zh"), post.points) : c.broadcastKudos(sender.name, names("zh"));
         await send("chat_id", config.lark.broadcastChatId, card(title, post, "zh", ""));
       })(),
     );
