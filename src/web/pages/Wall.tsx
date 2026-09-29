@@ -1,4 +1,4 @@
-import { ArrowRightIcon } from "@heroicons/react/20/solid";
+import { ArrowRightIcon, BellAlertIcon } from "@heroicons/react/20/solid";
 import { type Users } from "../api";
 import { Constellation, type GraphEdge } from "../components/Constellation";
 import { Feed } from "../components/Feed";
@@ -37,6 +37,11 @@ export function Wall() {
               {t("post.bonus")}
             </button>
           </div>
+          {me.config.lark && (
+            <p className="hero-note">
+              <BellAlertIcon className="ic" /> {t("hero.notify")}
+            </p>
+          )}
           <dl className="stats">
             <div>
               <dt>{t("stats.posts")}</dt>
