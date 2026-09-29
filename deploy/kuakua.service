@@ -1,0 +1,21 @@
+[Unit]
+Description=Kuakua 夸夸 — internal kudos & peer bonus (kuakua.maxinsights.ai)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mushan
+Group=mushan
+WorkingDirectory=/home/mushan/kuakua
+Environment=NODE_ENV=production
+EnvironmentFile=/home/mushan/kuakua/.env.production
+ExecStart=/home/mushan/.local/share/mise/installs/bun/1.4.2/bin/bun src/server/index.ts
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
