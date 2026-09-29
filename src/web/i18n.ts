@@ -42,7 +42,7 @@ const zh = {
   "post.react": "添加回应",
   "post.plusOne": "+1 附议",
   "post.back": "返回夸夸墙",
-  "post.andMore": "等 {n} 人",
+  "post.groupCount": "{n} 位同事",
   "post.sep": "、",
   "post.cc": "抄送",
 
@@ -220,7 +220,7 @@ const en: Record<Key, string> = {
   "post.react": "React",
   "post.plusOne": "+1 — me too",
   "post.back": "Back to the wall",
-  "post.andMore": "+{n} more",
+  "post.groupCount": "{n} colleagues",
   "post.sep": ", ",
   "post.cc": "CC",
 

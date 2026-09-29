@@ -72,15 +72,8 @@ export function PostCard({
     navigator.clipboard?.writeText(`${location.origin}/k/${post.id}`).then(() => toast(t("post.copied")));
   }
 
-  const recipientNames =
-    recipients.length <= 3
-      ? recipients.map((u) => <UserName key={u?.id} user={u} />)
-      : [
-          ...recipients.slice(0, 2).map((u) => <UserName key={u?.id} user={u} />),
-          <span key="more" className="muted">
-            {t("post.andMore", { n: recipients.length - 2 })}
-          </span>,
-        ];
+  // Up to 3 recipients fit in the header; a bigger group gets its own row so nobody is hidden behind "+N".
+  const group = recipients.length > 3;
 
   return (
     <article className={`post ${bonus ? "bonus" : ""} ${fresh ? "fresh" : ""}`}>
@@ -90,15 +83,46 @@ export function PostCard({
           <Avatar user={sender} size={36} />
           <UserName user={sender} className="sender" />
           <ArrowRightIcon className="post-arrow" aria-hidden="true" />
-          <AvatarStack users={recipients} size={36} max={3} />
-          <span className="recipients">
-            {recipientNames.flatMap((n, i) => (i ? [<span key={`s${i}`} className="sep">{t("post.sep")}</span>, n] : [n]))}
-          </span>
+          {group ? (
+            <span className="recipients group-count">{t("post.groupCount", { n: recipients.length })}</span>
+          ) : (
+            <>
+              <AvatarStack users={recipients} size={36} max={3} />
+              <span className="recipients">
+                {recipients.map((u, i) => (
+                  <span key={u?.id ?? i}>
+                    {i > 0 && <span className="sep">{t("post.sep")}</span>}
+                    <UserName user={u} />
+                  </span>
+                ))}
+              </span>
+            </>
+          )}
         </div>
         <Link to={`/k/${post.id}`} className="post-time" title={new Date(post.createdAt).toLocaleString()}>
           {relativeTime(post.createdAt, lang, t)}
         </Link>
       </header>
+
+      {group && (
+        <ul className="post-group">
+          {recipients.map((u, i) => (
+            <li key={u?.id ?? i}>
+              {u ? (
+                <Link to={`/u/${u.id}`} className="group-chip">
+                  <Avatar user={u} size={24} link={false} />
+                  <span>{name(u)}</span>
+                </Link>
+              ) : (
+                <span className="group-chip">
+                  <Avatar user={u} size={24} />
+                  <span>…</span>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="post-body">
         <span className="quote-mark" aria-hidden="true">
