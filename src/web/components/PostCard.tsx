@@ -13,7 +13,7 @@ import { api, type Comment, type Feed, type Post, type PostDetail, type Users } 
 import { errorText, relativeTime } from "../i18n";
 import { Link } from "../router";
 import { useApp } from "../state";
-import { REACTIONS, LIMITS } from "../../shared/values";
+import { LIMITS, PLUS_ONE, REACTIONS } from "../../shared/values";
 import { Avatar, AvatarStack, UserName, ValueChip } from "./ui";
 
 export function PostCard({
@@ -146,11 +146,16 @@ export function PostCard({
                 onClick={() => react(r.emoji)}
                 title={who}
               >
-                <span className="emo">{r.emoji}</span>
+                <span className={`emo ${r.emoji === PLUS_ONE ? "plus-one" : ""}`}>{r.emoji}</span>
                 <span className="n">{r.userIds.length}</span>
               </button>
             );
           })}
+          {!post.reactions.some((r) => r.emoji === PLUS_ONE) && (
+            <button type="button" className={`reaction ghost ${burst === PLUS_ONE ? "pop" : ""}`} onClick={() => react(PLUS_ONE)} title={t("post.plusOne")}>
+              <span className="emo plus-one">+1</span>
+            </button>
+          )}
           <div className="react-add-wrap">
             <button type="button" className="icon-btn" aria-label={t("post.react")} onClick={() => setPicker((v) => !v)}>
               <FaceSmileIcon />
@@ -158,14 +163,16 @@ export function PostCard({
             {picker && (
               <Popover onClose={() => setPicker(false)} className="emoji-pop">
                 {REACTIONS.map((e) => (
-                  <button key={e} type="button" onClick={() => react(e)}>
+                  <button key={e} type="button" className={e === PLUS_ONE ? "plus-one" : ""} onClick={() => react(e)}>
                     {e}
                   </button>
                 ))}
               </Popover>
             )}
           </div>
-          {burst && !post.reactions.some((r) => r.emoji === burst) && <span className="burst">{burst}</span>}
+          {burst && !post.reactions.some((r) => r.emoji === burst) && (
+            <span className={`burst ${burst === PLUS_ONE ? "plus-one" : ""}`}>{burst}</span>
+          )}
         </div>
         <div className="post-actions">
           <button

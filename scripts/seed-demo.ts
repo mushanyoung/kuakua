@@ -131,7 +131,7 @@ for (const at of times) {
   const post = Number(res.lastInsertRowid);
   for (const u of recipients) insertRecipient.run({ post, user: u });
   const nReactions = Math.floor(rand() * 7);
-  for (let k = 0; k < nReactions; k++) insertReaction.run({ post, user: pick(ids), emoji: pick(REACTIONS.slice(0, 5)), at: at + 1000 });
+  for (let k = 0; k < nReactions; k++) insertReaction.run({ post, user: pick(ids), emoji: pick(REACTIONS.slice(0, 6)), at: at + 1000 });
   if (rand() < 0.3) insertComment.run({ post, user: pick(ids), body: pick(comments), at: at + 5000 });
 }
 console.log(`seeded ${ids.length} people and 64 posts into ${config.dataDir}`);

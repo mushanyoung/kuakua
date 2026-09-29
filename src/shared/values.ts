@@ -22,7 +22,9 @@ export const VALUES: ValueTag[] = [
 export const VALUE_IDS = new Set(VALUES.map((v) => v.id));
 export const valueById = (id: string | null | undefined) => VALUES.find((v) => v.id === id);
 
-export const REACTIONS = ["❤️", "👏", "🎉", "🔥", "🙌", "💯"] as const;
+// "+1" renders as text and is also offered as a one-tap button on every card.
+export const PLUS_ONE = "+1";
+export const REACTIONS = [PLUS_ONE, "❤️", "👏", "🎉", "🔥", "🙌", "💯"] as const;
 
 export const LIMITS = {
   messageMax: 1000,

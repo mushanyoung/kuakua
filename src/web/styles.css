@@ -1395,6 +1395,27 @@ button.value-chip:hover {
   font-size: 12px;
   color: var(--text-2);
 }
+.plus-one {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 13px !important;
+  letter-spacing: -0.02em;
+  background: var(--grad-warm);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.emoji-pop button.plus-one {
+  font-size: 16px !important;
+}
+.reaction.ghost {
+  background: transparent;
+  border-style: dashed;
+}
+.reaction.ghost:hover {
+  border-style: solid;
+  background: rgba(255, 107, 139, 0.1);
+}
 .reaction.mine {
   background: rgba(255, 107, 139, 0.14);
   border-color: rgba(255, 107, 139, 0.45);
