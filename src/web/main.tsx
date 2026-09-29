@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { HomeIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { api, ApiError, type Me } from "./api";
 import { Composer } from "./components/Composer";
+import { KuaLinkPage } from "./components/KuaLink";
 import { Avatar, HeartMark, Logo } from "./components/ui";
 import { makeT } from "./i18n";
 import { Admin } from "./pages/Admin";
@@ -82,6 +83,7 @@ function Routes() {
   if (path === "/admin") return <Admin />;
   if ((m = match("/u/:id", path))) return <ProfilePage key={m.id} id={m.id!} />;
   if ((m = match("/k/:id", path))) return <PostPage key={m.id} id={m.id!} />;
+  if ((m = match("/kua/:handle", path))) return <KuaLinkPage key={m.handle} handle={m.handle!} />;
   return (
     <div className="page narrow">
       <h1 className="page-title">404</h1>

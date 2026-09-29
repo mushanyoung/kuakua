@@ -1558,6 +1558,43 @@ button.value-chip:hover {
     transform: translateY(18px) scale(0.97);
   }
 }
+.modal.small {
+  width: min(520px, 100%);
+  margin-top: 10vh;
+}
+.kua-who {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.kua-who p {
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.kua-copy {
+  display: flex;
+  gap: 10px;
+}
+.kua-copy input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line-2);
+  outline: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+}
+.kua-copy input:focus {
+  border-color: rgba(255, 107, 139, 0.55);
+}
+.kua-copy .btn {
+  height: 44px;
+}
 .modal-head {
   display: flex;
   align-items: center;
@@ -2676,6 +2713,15 @@ button.value-chip:hover {
       transform: translateY(40px);
       opacity: 0;
     }
+  }
+  .modal.small {
+    margin-top: 0;
+  }
+  .kua-copy {
+    flex-direction: column;
+  }
+  .kua-copy input {
+    flex: none;
   }
   .kind-opt {
     flex-direction: column;

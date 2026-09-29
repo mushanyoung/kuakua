@@ -116,6 +116,16 @@ const zh = {
   "profile.noValues": "还没有品质标签",
   "profile.noSupporters": "还没有人感谢过 TA",
 
+  "kua.button": "夸夸链接",
+  "kua.title": "{name} 的夸夸链接",
+  "kua.titleSelf": "我的夸夸链接",
+  "kua.desc": "把链接发给同事，打开就能直接夸 {name}。",
+  "kua.descSelf": "放在 Lark 签名、个人简介或群里，同事打开就能直接夸你。",
+  "kua.copy": "复制链接",
+  "kua.copied": "链接已复制",
+  "kua.self": "这是你自己的夸夸链接，分享给同事吧",
+  "kua.notFound": "没有找到这位同事",
+
   "admin.title": "管理",
   "admin.back": "返回管理",
   "admin.leaderboardDesc": "最受感谢 / 最会夸人，按月、季度、年查看",
@@ -282,6 +292,16 @@ const en: Record<Key, string> = {
   "profile.you": "This is you",
   "profile.noValues": "No value tags yet",
   "profile.noSupporters": "No one has thanked them yet",
+
+  "kua.button": "Kudos link",
+  "kua.title": "{name}'s kudos link",
+  "kua.titleSelf": "My kudos link",
+  "kua.desc": "Share it — anyone who opens it can thank {name} right away.",
+  "kua.descSelf": "Put it in your Lark bio or a group chat — colleagues can thank you in one click.",
+  "kua.copy": "Copy link",
+  "kua.copied": "Link copied",
+  "kua.self": "That's your own kudos link — share it with colleagues",
+  "kua.notFound": "Couldn't find this colleague",
 
   "admin.title": "Admin",
   "admin.back": "Back to admin",

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { altName, type User, type Users } from "../api";
 import { Feed } from "../components/Feed";
+import { KuaLinkButton } from "../components/KuaLink";
 import { Avatar, CountUp, Empty, Segmented, Spinner, ValueChip } from "../components/ui";
 import { errorText } from "../i18n";
 import { Link } from "../router";
@@ -41,21 +42,22 @@ export function ProfilePage({ id }: { id: string }) {
               {[(lang === "en" && u.deptEn) || u.dept, u.title].filter(Boolean).join(" · ") || u.handle}
             </p>
           </div>
-          <div className="profile-cta">
+          <div className="profile-cta row-gap">
             {isMe ? (
-              <span className="row-gap">
+              <>
                 <span className="you-tag">{t("profile.you")}</span>
                 {me.isAdmin && (
                   <Link to="/admin" className="btn soft sm">
                     {t("nav.admin")}
                   </Link>
                 )}
-              </span>
+              </>
             ) : (
               <button type="button" className="btn primary" onClick={() => openComposer({ recipientIds: [u.id] })}>
                 {t("profile.thank")}
               </button>
             )}
+            <KuaLinkButton user={u} />
           </div>
         </div>
         <dl className="stats profile-stats">
