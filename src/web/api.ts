@@ -5,6 +5,7 @@ export type User = {
   name: string;
   enName: string | null;
   avatar: string;
+  customAvatar: boolean;
   dept: string | null;
   deptEn: string | null;
   title: string | null;
@@ -68,11 +69,13 @@ export class ApiError extends Error {
 
 export async function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
   let res: Response;
+  const body = init?.body;
+  const binary = body instanceof Blob;
   try {
     res = await fetch(path, {
       method: init?.method ?? "GET",
-      headers: init?.body !== undefined ? { "Content-Type": "application/json" } : undefined,
-      body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+      headers: body !== undefined ? { "Content-Type": binary ? body.type || "application/octet-stream" : "application/json" } : undefined,
+      body: binary ? body : body !== undefined ? JSON.stringify(body) : undefined,
       credentials: "same-origin",
     });
   } catch {

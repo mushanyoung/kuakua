@@ -3088,3 +3088,18 @@ a.group-chip:hover {
 .email-toggle.on .ic {
   color: var(--peach);
 }
+
+.avatar-editor {
+  margin-top: 12px;
+}
+.avatar-editor .row-gap {
+  flex-wrap: wrap;
+}
+.avatar-editor .ic {
+  width: 16px;
+  height: 16px;
+}
+.avatar-editor > p {
+  margin-top: 6px;
+  font-size: 12px;
+}

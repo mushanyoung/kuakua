@@ -15,6 +15,7 @@ type AppCtx = {
   t: T;
   users: Users;
   mergeUsers: (u: Users) => void;
+  updateUser: (u: User) => void;
   directory: Directory | null;
   loadDirectory: () => Promise<Directory>;
   openComposer: (prefill?: ComposerPrefill) => void;
@@ -71,6 +72,12 @@ export function AppProvider({
   }, []);
 
   const mergeUsers = useCallback((u: Users) => setUsers((prev) => ({ ...prev, ...u })), []);
+  const updateUser = useCallback((u: User) => {
+    setUsers((prev) => ({ ...prev, [u.id]: u }));
+    setMe((prev) => prev.user.id === u.id ? { ...prev, user: u } : prev);
+    setDirectory((prev) => prev && { ...prev, users: prev.users.map((old) => old.id === u.id ? { ...old, ...u } : old) });
+    dirPromise.current = null;
+  }, []);
 
   const loadDirectory = useCallback(() => {
     dirPromise.current ??= api<Directory>("/api/users").then((d) => {
@@ -106,6 +113,7 @@ export function AppProvider({
     t,
     users,
     mergeUsers,
+    updateUser,
     directory,
     loadDirectory,
     openComposer: onOpenComposer,

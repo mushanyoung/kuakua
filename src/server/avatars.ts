@@ -1,5 +1,7 @@
 import { env } from "cloudflare:workers";
-import { userRowById } from "./store";
+import { avatarVersion, HttpError, toUser, userRowById, type UserRow, type Viewer } from "./store";
+import { db } from "./db";
+import { AVATAR_TYPES, MAX_AVATAR_BYTES } from "../shared/avatars";
 
 // Avatars live in R2 (the FILES bucket). users.avatar_key names the 240px image; Lark
 // avatars also have a 640px one at the same key with "-640". Roster avatars are served
@@ -46,28 +48,118 @@ function placeholder(id: number, name: string) {
 }
 
 export function sniff(bytes: Uint8Array) {
-  if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
-  if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
-  if (bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return "image/webp";
-  if (bytes[0] === 0x47 && bytes[1] === 0x49) return "image/gif";
+  const at = (offset: number, signature: number[]) => signature.every((b, i) => bytes[offset + i] === b);
+  const ascii = (offset: number, text: string) => at(offset, [...text].map((c) => c.charCodeAt(0)));
+  if (bytes.length >= 4 && at(0, [0xff, 0xd8, 0xff])) return "image/jpeg";
+  if (bytes.length >= 24 && at(0, [0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10]) && ascii(12, "IHDR")) return "image/png";
+  if (bytes.length >= 20 && ascii(0, "RIFF") && ascii(8, "WEBP")) return "image/webp";
+  if (bytes.length >= 13 && (ascii(0, "GIF87a") || ascii(0, "GIF89a"))) return "image/gif";
   return "application/octet-stream";
 }
 
-export async function serveAvatar(id: number, size: string | null, versioned: boolean) {
+async function editableUser(id: number, viewer: Viewer) {
+  if (id !== viewer.id && !viewer.isAdmin) throw new HttpError(403, "forbidden");
+  const row = await userRowById(id);
+  if (!row) throw new HttpError(404, "user_not_found");
+  return row;
+}
+
+// Bound the actual stream as well as Content-Length, which may be absent or inaccurate.
+async function readUpload(req: Request) {
+  if (Number(req.headers.get("content-length")) > MAX_AVATAR_BYTES) throw new HttpError(413, "avatar_too_large");
+  if (!req.body) throw new HttpError(400, "avatar_invalid");
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > MAX_AVATAR_BYTES) {
+        await reader.cancel();
+        throw new HttpError(413, "avatar_too_large");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  if (!AVATAR_TYPES.includes(sniff(bytes))) throw new HttpError(415, "avatar_invalid");
+  return bytes;
+}
+
+async function cleanup(key: string) {
+  // A cleanup failure must not turn a successfully saved avatar into a failed request.
+  await env.FILES.delete(key).catch((e: unknown) => console.error("[avatar] cleanup failed", key, e));
+}
+
+async function replaceCustomAvatar(row: UserRow, key: string | null) {
+  // Compare-and-swap prevents simultaneous uploads/removals from deleting the winner's file.
+  const result = await db.run(
+    `UPDATE users SET custom_avatar_key = $key, updated_at = $now
+     WHERE id = $id AND custom_avatar_key IS $previous`,
+    { key, now: Date.now(), id: row.id, previous: row.custom_avatar_key },
+  );
+  if (!result.changes) throw new HttpError(409, "avatar_changed");
+}
+
+export async function uploadAvatar(id: number, viewer: Viewer, req: Request) {
+  const row = await editableUser(id, viewer);
+  const bytes = await readUpload(req);
+  const key = `custom-avatars/${id}/${crypto.randomUUID()}`;
+  await putAvatar(key, bytes);
+  try {
+    await replaceCustomAvatar(row, key);
+  } catch (e) {
+    await cleanup(key);
+    throw e;
+  }
+  if (row.custom_avatar_key) await cleanup(row.custom_avatar_key);
+  return toUser((await userRowById(id))!);
+}
+
+export async function removeAvatar(id: number, viewer: Viewer) {
+  const row = await editableUser(id, viewer);
+  if (row.custom_avatar_key) {
+    await replaceCustomAvatar(row, null);
+    await cleanup(row.custom_avatar_key);
+  }
+  return toUser((await userRowById(id))!);
+}
+
+export async function serveAvatar(id: number, size: string | null, version: string | null) {
   const row = await userRowById(id);
   if (!row) return new Response("not found", { status: 404 });
-  const cache = versioned ? "private, max-age=31536000, immutable" : "private, max-age=3600";
+  // Never cache today's bytes under a stale version URL after a replacement or removal.
+  let cache = version === avatarVersion(row) ? "private, max-age=31536000, immutable" : "private, no-store";
+  const imageResponse = (obj: R2ObjectBody) => new Response(obj.body, {
+    headers: {
+      "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+      "Cache-Control": cache,
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+  if (row.custom_avatar_key) {
+    const obj = await env.FILES.get(row.custom_avatar_key);
+    if (obj) return imageResponse(obj);
+    cache = "private, no-store";
+  }
   if (row.avatar_ver && row.avatar_key) {
     const big = row.avatar_key.endsWith("-240") ? row.avatar_key.replace(/-240$/, "-640") : null;
     for (const key of size === "640" && big ? [big, row.avatar_key] : [row.avatar_key]) {
       const obj = await env.FILES.get(key);
       if (!obj) continue;
-      return new Response(obj.body, {
-        headers: { "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream", "Cache-Control": cache },
-      });
+      return imageResponse(obj);
     }
   }
   return new Response(placeholder(id, row.name), {
-    headers: { "Content-Type": "image/svg+xml; charset=utf-8", "Cache-Control": "private, max-age=3600" },
+    headers: { "Content-Type": "image/svg+xml; charset=utf-8", "Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff" },
   });
 }

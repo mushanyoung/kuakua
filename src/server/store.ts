@@ -21,6 +21,7 @@ export type UserRow = {
   en_name: string | null;
   avatar_ver: string | null;
   avatar_key: string | null;
+  custom_avatar_key: string | null;
   dept_id: string | null;
   dept_name: string | null;
   dept_en: string | null;
@@ -39,6 +40,7 @@ export type UserDTO = {
   name: string;
   enName: string | null;
   avatar: string;
+  customAvatar: boolean;
   dept: string | null;
   deptEn: string | null;
   title: string | null;
@@ -49,18 +51,25 @@ export type UserDTO = {
 };
 
 const USER_SELECT = `
-  SELECT u.id, u.open_id, u.email, u.name, u.en_name, u.avatar_ver, u.avatar_key, u.dept_id, u.job_title,
+  SELECT u.id, u.open_id, u.email, u.name, u.en_name, u.avatar_ver, u.avatar_key, u.custom_avatar_key, u.dept_id, u.job_title,
          u.active, u.source, u.lang, u.email_notify, u.joined_at, u.last_seen_at,
          d.name AS dept_name, d.en_name AS dept_en, l.id AS leader_id
   FROM users u LEFT JOIN departments d ON d.id = u.dept_id
   LEFT JOIN users l ON l.active = 1 AND (l.open_id = u.leader_open_id OR l.email = u.leader_email)`;
+
+export function avatarVersion(r: UserRow) {
+  if (r.custom_avatar_key) return `custom-${r.custom_avatar_key.split("/").pop()}`;
+  if (r.avatar_ver && r.avatar_key) return `source-${r.avatar_ver}`;
+  return `default-${r.name}`;
+}
 
 export function toUser(r: UserRow): UserDTO {
   return {
     id: r.id,
     name: r.name,
     enName: r.en_name || null,
-    avatar: `/avatars/${r.id}${r.avatar_ver ? `?v=${r.avatar_ver}` : ""}`,
+    avatar: `/avatars/${r.id}?v=${encodeURIComponent(avatarVersion(r))}`,
+    customAvatar: Boolean(r.custom_avatar_key),
     dept: r.dept_name,
     deptEn: r.dept_en || null,
     title: r.job_title || null,
@@ -512,7 +521,7 @@ export async function overview() {
   for (const e of graph) nodeIds.add(e.source).add(e.target);
   if (nodeIds.size < 24) {
     const extra = await db.all<{ id: number }>(
-      "SELECT id FROM users WHERE active = 1 AND avatar_ver IS NOT NULL ORDER BY RANDOM() LIMIT $n",
+      "SELECT id FROM users WHERE active = 1 AND (avatar_ver IS NOT NULL OR custom_avatar_key IS NOT NULL) ORDER BY RANDOM() LIMIT $n",
       { n: 24 - nodeIds.size },
     );
     for (const { id } of extra) nodeIds.add(id);
@@ -591,7 +600,7 @@ export async function syncStatus() {
     q("SELECT * FROM sync_runs WHERE ok = 1 ORDER BY id DESC LIMIT 1"),
     q(
       `SELECT COUNT(*) AS total, SUM(active) AS active, SUM(source = 'lark' AND active = 1) AS lark,
-              SUM(avatar_ver IS NOT NULL AND active = 1) AS withAvatar FROM users`,
+              SUM((avatar_ver IS NOT NULL OR custom_avatar_key IS NOT NULL) AND active = 1) AS withAvatar FROM users`,
     ),
   ]);
   return { last: last!.results[0] ?? null, lastOk: lastOk!.results[0] ?? null, counts: counts!.results[0] };

@@ -1,5 +1,5 @@
 import { authenticate } from "./auth";
-import { serveAvatar } from "./avatars";
+import { removeAvatar, serveAvatar, uploadAvatar } from "./avatars";
 import { config, emailNotifyEnabled, larkNotifyEnabled, notifyChannels } from "./config";
 import { directoryConfigured, maybeSync, syncDirectory, syncRunning } from "./directory";
 import { sendTestEmail } from "./email";
@@ -76,6 +76,12 @@ route("PUT", "/api/me/prefs", async ({ req, viewer }) => store.setPrefs(viewer.i
 
 route("GET", "/api/users", ({ viewer }) => store.listUsers(viewer));
 route("GET", "/api/users/:id", ({ params, viewer }) => store.profile(params.id === "me" ? viewer.id : (intParam(params.id) ?? 0), viewer));
+route("PUT", "/api/users/:id/avatar", ({ req, params, viewer }) =>
+  uploadAvatar(params.id === "me" ? viewer.id : (intParam(params.id) ?? 0), viewer, req),
+);
+route("DELETE", "/api/users/:id/avatar", ({ params, viewer }) =>
+  removeAvatar(params.id === "me" ? viewer.id : (intParam(params.id) ?? 0), viewer),
+);
 
 route("GET", "/api/posts", ({ url, viewer }) => {
   const q = url.searchParams;
@@ -239,7 +245,7 @@ export default {
         if (e instanceof HttpError) return new Response(e.code, { status: e.status });
         throw e;
       }
-      return serveAvatar(Number(avatar[1]), url.searchParams.get("s"), url.searchParams.has("v"));
+      return serveAvatar(Number(avatar[1]), url.searchParams.get("s"), url.searchParams.get("v"));
     }
     return env.ASSETS.fetch(req);
   },

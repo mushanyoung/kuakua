@@ -10,7 +10,8 @@
     "config": "bun scripts/config.ts",
     "deploy": "./scripts/deploy.sh",
     "types": "wrangler types src/server/worker-configuration.d.ts --strict-vars=false",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p src/server"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/server",
+    "test:avatars": "node --test tests/avatars.test.ts"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",

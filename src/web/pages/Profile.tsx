@@ -2,6 +2,7 @@ import { useState } from "react";
 import { EnvelopeIcon } from "@heroicons/react/20/solid";
 import { altName, api, type User, type Users } from "../api";
 import { Feed } from "../components/Feed";
+import { AvatarEditor } from "../components/AvatarEditor";
 import { KuaLinkButton } from "../components/KuaLink";
 import { Avatar, CountUp, Empty, Segmented, Spinner, ValueChip } from "../components/ui";
 import { errorText } from "../i18n";
@@ -42,6 +43,9 @@ export function ProfilePage({ id }: { id: string }) {
             <p className="muted">
               {[(lang === "en" && u.deptEn) || u.dept, u.title].filter(Boolean).join(" · ") || u.handle}
             </p>
+            {(isMe || me.isAdmin) && (
+              <AvatarEditor key={u.id} user={u} onChange={(user) => res.setData({ ...p, user, users: { ...p.users, [user.id]: user } })} />
+            )}
           </div>
           <div className="profile-cta row-gap">
             {isMe ? (
