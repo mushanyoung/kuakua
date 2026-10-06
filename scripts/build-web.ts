@@ -24,11 +24,18 @@ async function build() {
   const result = await Bun.build({
     entrypoints: [join(ROOT, "src/web/index.html")],
     outdir: OUT,
+    // Absolute asset URLs: the same index.html is served for every route (/kua/x, /k/1, …).
+    publicPath: "/",
     minify: true,
     sourcemap: "linked",
   });
   if (!result.success) {
     for (const log of result.logs) console.error(log);
+    return false;
+  }
+  const html = await Bun.file(join(OUT, "index.html")).text();
+  if (/(?:src|href)="\.\//.test(html)) {
+    console.error("[web] index.html links assets relatively; deep links like /kua/x would load a blank page");
     return false;
   }
   mkdirSync(join(OUT, "fonts"), { recursive: true });
