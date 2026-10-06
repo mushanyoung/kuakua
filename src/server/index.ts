@@ -2,12 +2,14 @@ import type { BunRequest } from "bun";
 import { mkdirSync, readdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import index from "../web/index.html";
-import { config, larkEnabled } from "./config";
+import { config, larkNotifyEnabled } from "./config";
 import { authenticate } from "./auth";
 import { db } from "./db";
 import { serveAvatar } from "./avatars";
-import { lastSuccessfulSync, notifyPost, syncDirectory, syncRunning } from "./lark";
+import { directoryConfigured, maybeSync, syncDirectory, syncRunning } from "./directory";
+import { notifyPost } from "./lark";
 import * as store from "./store";
+import { values } from "../shared/values";
 import { HttpError, type Viewer } from "./store";
 import { isPeriod, periodOf, type Range } from "./time";
 
@@ -59,8 +61,11 @@ function me(viewer: Viewer) {
     config: {
       monthlyAllowance: config.bonus.monthlyAllowance,
       bonusPoints: config.bonus.points,
-      lark: larkEnabled(),
+      // Whether people get Lark notifications.
+      lark: larkNotifyEnabled(),
+      directory: config.directory.source,
       timezone: config.timezone,
+      values: values(),
     },
   };
 }
@@ -161,14 +166,22 @@ const server = Bun.serve({
     },
 
     "/api/admin/status": {
-      GET: api(() => ({ ...store.syncStatus(), running: syncRunning(), lark: larkEnabled(), periods: store.bonusPeriods() }), {
-        admin: true,
-      }),
+      GET: api(
+        () => ({
+          ...store.syncStatus(),
+          running: syncRunning(),
+          source: config.directory.source,
+          configured: directoryConfigured(),
+          rosterFile: config.directory.source === "roster" ? config.directory.rosterFile : null,
+          periods: store.bonusPeriods(),
+        }),
+        { admin: true },
+      ),
     },
     "/api/admin/sync": {
       POST: api(
         () => {
-          if (!larkEnabled()) throw new HttpError(409, "lark_not_configured");
+          if (!directoryConfigured()) throw new HttpError(409, "directory_not_configured");
           syncDirectory("manual").catch(() => {});
           return { started: true };
         },
@@ -224,17 +237,11 @@ const server = Bun.serve({
   },
 });
 
-console.log(`kuakua listening on ${server.url} (${config.production ? "production" : "development"})`);
+const commit = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { stderr: "ignore" }).stdout.toString().trim();
+console.log(`kuakua ${commit || "?"} listening on ${server.url} (${config.production ? "production" : "development"}, ${config.directory.source} directory)`);
+if (config.production && !config.adminEmails.length) console.warn("ADMIN_EMAILS is empty: nobody can open the admin page");
 
 // ---------------------------------------------------------------- background jobs
-
-function maybeSync() {
-  if (!larkEnabled() || syncRunning()) return;
-  const status = store.syncStatus() as { last: { ok: number | null; started_at: number } | null };
-  if (status.last && !status.last.ok && Date.now() - status.last.started_at < 30 * 60_000) return;
-  if (Date.now() - lastSuccessfulSync() < config.lark.syncIntervalHours * 3600_000) return;
-  syncDirectory("schedule").catch(() => {});
-}
 
 function backupDaily() {
   const dir = join(config.dataDir, "backups");
@@ -249,7 +256,7 @@ function backupDaily() {
 // A sync that was running when the process died will never finish; close it out.
 db.query("UPDATE sync_runs SET finished_at = started_at, ok = 0, error = 'interrupted' WHERE finished_at IS NULL").run();
 setTimeout(maybeSync, 3_000);
-setInterval(maybeSync, 10 * 60_000);
+setInterval(maybeSync, 60_000);
 if (config.production) {
   backupDaily();
   setInterval(backupDaily, 3600_000);

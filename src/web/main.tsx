@@ -14,6 +14,7 @@ import { ProfilePage } from "./pages/Profile";
 import { Wall } from "./pages/Wall";
 import { Link, match, navigate, useLocation } from "./router";
 import { AppProvider, LANG_KEY, useApp, type ComposerPrefill } from "./state";
+import { setValues } from "../shared/values";
 
 function Nav() {
   const { t, lang, setLang, me, openComposer } = useApp();
@@ -155,11 +156,12 @@ document.head.appendChild(fonts);
 
 const root = createRoot(document.getElementById("root")!);
 api<Me>("/api/me")
-  .then((me) =>
+  .then((me) => {
+    setValues(me.config.values);
     root.render(
       <StrictMode>
         <App me={me} />
       </StrictMode>,
-    ),
-  )
+    );
+  })
   .catch((e: ApiError) => root.render(<Fatal code={e.code} />));

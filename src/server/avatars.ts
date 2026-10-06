@@ -1,6 +1,20 @@
+import { mkdirSync } from "node:fs";
+import { rename } from "node:fs/promises";
 import { join } from "node:path";
-import { avatarDir } from "./lark";
+import { config } from "./config";
 import { userRowById } from "./store";
+
+// Synced avatars live at <dataDir>/avatars/<userId>-240 and -640 (raw image bytes).
+export const avatarDir = join(config.dataDir, "avatars");
+mkdirSync(avatarDir, { recursive: true });
+
+export const avatarFile = (userId: number, size: "240" | "640") => join(avatarDir, `${userId}-${size}`);
+
+export async function writeAvatar(userId: number, size: "240" | "640", bytes: ArrayBuffer | Uint8Array) {
+  const file = avatarFile(userId, size);
+  await Bun.write(`${file}.tmp`, bytes);
+  await rename(`${file}.tmp`, file);
+}
 
 const GRADIENTS = [
   ["#FF6B8B", "#FF9F6B"],
@@ -32,7 +46,7 @@ function placeholder(id: number, name: string) {
 </svg>`;
 }
 
-function sniff(bytes: Uint8Array) {
+export function sniff(bytes: Uint8Array) {
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
   if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
   if (bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return "image/webp";
@@ -45,8 +59,8 @@ export async function serveAvatar(id: number, size: string | null, versioned: bo
   if (!row) return new Response("not found", { status: 404 });
   const cache = versioned ? "private, max-age=31536000, immutable" : "private, max-age=3600";
   if (row.avatar_ver) {
-    for (const s of size === "640" ? ["640", "240"] : ["240"]) {
-      const file = Bun.file(join(avatarDir, `${id}-${s}`));
+    for (const s of size === "640" ? (["640", "240"] as const) : (["240"] as const)) {
+      const file = Bun.file(avatarFile(id, s));
       if (!(await file.exists())) continue;
       const bytes = new Uint8Array(await file.arrayBuffer());
       return new Response(bytes, { headers: { "Content-Type": sniff(bytes), "Cache-Control": cache } });

@@ -1,3 +1,5 @@
+import type { ValueTag } from "../shared/values";
+
 export type User = {
   id: number;
   name: string;
@@ -41,7 +43,14 @@ export type Me = {
   isAdmin: boolean;
   lang: "zh" | "en" | null;
   allowance: Allowance;
-  config: { monthlyAllowance: number; bonusPoints: number; lark: boolean; timezone: string };
+  config: {
+    monthlyAllowance: number;
+    bonusPoints: number;
+    lark: boolean;
+    directory: "lark" | "roster";
+    timezone: string;
+    values: ValueTag[];
+  };
 };
 
 export type Feed = { posts: Post[]; users: Users; nextCursor: number | null };

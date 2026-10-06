@@ -5,7 +5,7 @@ import { BellAlertIcon, LockClosedIcon } from "@heroicons/react/20/solid";
 import { altName, api, type PostDetail, type Allowance, type User } from "../api";
 import { errorText } from "../i18n";
 import { useApp, type ComposerPrefill } from "../state";
-import { LIMITS, VALUES } from "../../shared/values";
+import { LIMITS, values } from "../../shared/values";
 import { Avatar, ValueChip } from "./ui";
 
 const HEART = confetti.shapeFromPath({
@@ -178,7 +178,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           suggest={suggestTo}
         />
         <label className="field-label" htmlFor="composer-cc">
-          {t("composer.cc")} <small>{t("composer.ccHint")}</small>
+          {t("composer.cc")} <small>{me.config.lark ? t("composer.ccHintLark") : t("composer.ccHint")}</small>
         </label>
         <PeoplePicker
           id="composer-cc"
@@ -196,7 +196,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           {t("composer.why")} <small>{t("composer.optional")}</small>
         </div>
         <div className="value-grid">
-          {VALUES.map((v) => (
+          {values().map((v) => (
             <ValueChip key={v.id} id={v.id} active={valueTag === v.id} onClick={() => setValueTag((cur) => (cur === v.id ? null : v.id))} />
           ))}
         </div>

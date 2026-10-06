@@ -41,7 +41,7 @@ export function People() {
       <header className="page-head">
         <div>
           <h1 className="page-title">{t("people.title")}</h1>
-          <p className="muted">{t("people.sub", { n: directory?.users.length ?? "…" })}</p>
+          <p className="muted">{t(me.config.directory === "lark" ? "people.subLark" : "people.sub", { n: directory?.users.length ?? "…" })}</p>
         </div>
       </header>
 

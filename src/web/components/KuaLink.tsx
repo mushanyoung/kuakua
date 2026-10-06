@@ -58,7 +58,7 @@ function KuaLinkDialog({ user, onClose }: { user: User; onClose: () => void }) {
         </div>
         <div className="kua-who">
           <Avatar user={user} size={44} link={false} ring />
-          <p className="muted">{self ? t("kua.descSelf") : t("kua.desc", { name: name(user) })}</p>
+          <p className="muted">{self ? t(me.config.directory === "lark" ? "kua.descSelfLark" : "kua.descSelf") : t("kua.desc", { name: name(user) })}</p>
         </div>
         <div className="kua-copy">
           <input ref={input} readOnly value={url} onFocus={(e) => e.target.select()} aria-label={t("kua.button")} />

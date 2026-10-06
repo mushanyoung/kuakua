@@ -9,7 +9,7 @@ if (!config.dataDir.includes("demo")) {
 
 const { db } = await import("../src/server/db");
 const { periodOf } = await import("../src/server/time");
-const { VALUES, REACTIONS } = await import("../src/shared/values");
+const { values, REACTIONS } = await import("../src/shared/values");
 
 const depts = [
   ["d-collect", "数据采集", "Data Collection"],
@@ -84,7 +84,7 @@ people.forEach(([handle, name, en, dept, title], i) => {
     )
     .run({
       openId: `ou_demo_${handle}`,
-      email: `${handle}@maxinsights.ai`,
+      email: `${handle}@example.com`,
       name,
       en: en === name ? null : en,
       dept,
@@ -122,7 +122,7 @@ for (const at of times) {
     kind: bonus ? "bonus" : "kudos",
     sender,
     message: pick(messages),
-    tag: rand() < 0.85 ? pick(VALUES).id : null,
+    tag: rand() < 0.85 ? pick(values()).id : null,
     points,
     cost: points * recipients.size,
     period: periodOf(at),

@@ -1,7 +1,7 @@
 import { ADMIN_EMAILS, config, isAllowedEmail } from "./config";
 import { db } from "./db";
 import { periodBounds, periodOf, rangeStart, type Range } from "./time";
-import { LIMITS, REACTIONS, VALUE_IDS } from "../shared/values";
+import { LIMITS, REACTIONS, isValueId } from "../shared/values";
 
 export class HttpError extends Error {
   constructor(
@@ -51,7 +51,7 @@ const USER_SELECT = `
          u.active, u.source, u.lang, u.joined_at, u.last_seen_at,
          d.name AS dept_name, d.en_name AS dept_en, l.id AS leader_id
   FROM users u LEFT JOIN departments d ON d.id = u.dept_id
-  LEFT JOIN users l ON l.open_id = u.leader_open_id AND l.active = 1`;
+  LEFT JOIN users l ON l.active = 1 AND (l.open_id = u.leader_open_id OR l.email = u.leader_email)`;
 
 export function toUser(r: UserRow): UserDTO {
   return {
@@ -88,6 +88,14 @@ function usersByIds(ids: Iterable<number>) {
 // ---------------------------------------------------------------- identity
 
 export type Viewer = { id: number; email: string; isAdmin: boolean; row: UserRow };
+
+const qDirectoryMember = db.query("SELECT 1 FROM users WHERE email = $email AND active = 1 AND source IN ('lark', 'roster')");
+
+// Allowed domains and admins, plus anyone active in the synced directory.
+export function canSignIn(email: string) {
+  email = email.toLowerCase();
+  return isAllowedEmail(email) || Boolean(qDirectoryMember.get({ email }));
+}
 
 const touch = db.query("UPDATE users SET last_seen_at = $now WHERE id = $id");
 
@@ -274,7 +282,7 @@ export function feed(q: FeedQuery, viewer: Viewer) {
   if (q.cursor) (where.push("p.id < $cursor"), (params.cursor = q.cursor));
   if (q.after) (where.push("p.id > $after"), (params.after = q.after));
   if (q.kind === "kudos" || q.kind === "bonus") (where.push("p.kind = $kind"), (params.kind = q.kind));
-  if (q.tag && VALUE_IDS.has(q.tag)) (where.push("p.value_tag = $tag"), (params.tag = q.tag));
+  if (q.tag && isValueId(q.tag)) (where.push("p.value_tag = $tag"), (params.tag = q.tag));
   if (q.userId) {
     params.user = q.userId;
     const received = "EXISTS (SELECT 1 FROM post_recipients r WHERE r.post_id = p.id AND r.user_id = $user)";
@@ -332,7 +340,7 @@ export function createPost(input: NewPost, viewer: Viewer) {
   if (!message) throw new HttpError(400, "message_required");
   if (message.length > LIMITS.messageMax) throw new HttpError(400, "message_too_long");
   if (kind === "bonus" && message.length < LIMITS.messageMinBonus) throw new HttpError(400, "message_too_short");
-  const valueTag = typeof input.valueTag === "string" && VALUE_IDS.has(input.valueTag) ? input.valueTag : null;
+  const valueTag = typeof input.valueTag === "string" && isValueId(input.valueTag) ? input.valueTag : null;
 
   const ids = Array.isArray(input.recipientIds) ? [...new Set(input.recipientIds.map(Number))] : [];
   if (!ids.length || ids.some((n) => !Number.isInteger(n))) throw new HttpError(400, "recipients_required");

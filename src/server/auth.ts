@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { config, isAllowedEmail } from "./config";
-import { HttpError } from "./store";
+import { config } from "./config";
+import { canSignIn, HttpError } from "./store";
 
 const { teamDomain, aud, devEmail } = config.access;
 const jwks = teamDomain ? createRemoteJWKSet(new URL(`https://${teamDomain}/cdn-cgi/access/certs`)) : null;
@@ -38,6 +38,6 @@ export async function authenticate(req: Request): Promise<string> {
   }
   if (!email) throw new HttpError(401, "unauthenticated");
   email = email.toLowerCase();
-  if (!isAllowedEmail(email)) throw new HttpError(403, "email_domain_not_allowed");
+  if (!canSignIn(email)) throw new HttpError(403, "email_domain_not_allowed");
   return email;
 }

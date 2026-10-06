@@ -1,0 +1,6 @@
+email,name,en_name,department,department_en,title,manager,avatar
+alice@example.com,王丽,Alice Wang,工程,Engineering,Engineering Manager,,avatars/alice.jpg
+bob@example.com,Bob Chen,,工程,Engineering,Backend Engineer,alice@example.com,avatars/bob.png
+carol@example.com,李卡罗,Carol Li,设计,Design,Product Designer,alice@example.com,https://example.com/photos/carol.jpg
+# Lines starting with # are ignored. Only email and name are required; avatar is a path relative to this file or an https URL.
+dan@example.com,Dan Zhao,,,,,,

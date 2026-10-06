@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { api, type Feed as FeedData, type Post } from "../api";
 import { errorText } from "../i18n";
 import { useApp } from "../state";
-import { VALUES } from "../../shared/values";
+import { values } from "../../shared/values";
 import { PostCard } from "./PostCard";
 import { Empty, Segmented, Spinner, ValueChip } from "./ui";
 
@@ -117,7 +117,7 @@ export function Feed({
             ]}
           />
           <div className="tag-scroll">
-            {VALUES.map((v) => (
+            {values().map((v) => (
               <ValueChip key={v.id} id={v.id} size="sm" active={tag === v.id} onClick={() => setTag((c) => (c === v.id ? null : v.id))} />
             ))}
           </div>

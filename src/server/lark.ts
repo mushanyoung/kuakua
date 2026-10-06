@@ -1,14 +1,11 @@
-import { mkdirSync, existsSync } from "node:fs";
-import { rename } from "node:fs/promises";
-import { join } from "node:path";
-import { config, isAllowedEmail, larkEnabled } from "./config";
+import { existsSync } from "node:fs";
+import { avatarFile, writeAvatar } from "./avatars";
+import { config, isAllowedEmail, larkNotifyEnabled } from "./config";
 import { db } from "./db";
+import type { SyncResult } from "./directory";
 import { valueById } from "../shared/values";
 
 const log = (...args: unknown[]) => console.log("[lark]", ...args);
-
-export const avatarDir = join(config.dataDir, "avatars");
-mkdirSync(avatarDir, { recursive: true });
 
 // ---------------------------------------------------------------- client
 
@@ -163,7 +160,7 @@ function primaryDept(u: LarkUser) {
 }
 
 async function downloadAvatar(userId: number, u: LarkUser) {
-  const sizes: [string, string | undefined][] = [
+  const sizes: ["240" | "640", string | undefined][] = [
     ["240", u.avatar?.avatar_240],
     ["640", u.avatar?.avatar_640 ?? u.avatar?.avatar_origin],
   ];
@@ -171,145 +168,108 @@ async function downloadAvatar(userId: number, u: LarkUser) {
     if (!url) continue;
     const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`avatar HTTP ${res.status}`);
-    const file = join(avatarDir, `${userId}-${size}`);
-    await Bun.write(`${file}.tmp`, await res.arrayBuffer());
-    await rename(`${file}.tmp`, file);
+    await writeAvatar(userId, size, await res.arrayBuffer());
   }
 }
 
-let running: Promise<unknown> | null = null;
+// Pulls the whole Lark contact directory into users/departments. Run via directory.syncDirectory().
+export async function syncLark(): Promise<SyncResult> {
+  const { departments, users } = await fetchDirectory();
+  // Lark silently omits fields the app has no scope for; don't store nameless people.
+  const list = [...users.values()];
+  if (list.length && list.every((u) => !u.name)) throw new Error("users have no name: grant contact:user.base:readonly");
+  if (list.length && list.every((u) => !u.email && !u.enterprise_email)) {
+    throw new Error("users have no email: grant contact:user.email:readonly");
+  }
+  const now = Date.now();
 
-export function syncDirectory(trigger: string) {
-  if (!larkEnabled()) return Promise.reject(new Error("LARK_APP_ID / LARK_APP_SECRET not configured"));
-  running ??= runSync(trigger).finally(() => (running = null));
-  return running;
-}
-
-export const syncRunning = () => running !== null;
-
-async function runSync(trigger: string) {
-  const started = Date.now();
-  const run = db.query("INSERT INTO sync_runs (trigger, started_at) VALUES ($trigger, $now)").run({ trigger, now: started });
-  const runId = Number(run.lastInsertRowid);
-  try {
-    const { departments, users } = await fetchDirectory();
-    // Lark silently omits fields the app has no scope for; don't store nameless people.
-    const list = [...users.values()];
-    if (list.length && list.every((u) => !u.name)) throw new Error("users have no name: grant contact:user.base:readonly");
-    if (list.length && list.every((u) => !u.email && !u.enterprise_email)) {
-      throw new Error("users have no email: grant contact:user.email:readonly");
-    }
-    const now = Date.now();
-
-    db.transaction(() => {
-      const up = db.query(
-        `INSERT INTO departments (id, name, en_name, parent_id, updated_at) VALUES ($id, $name, $en, $parent, $now)
-         ON CONFLICT(id) DO UPDATE SET name = excluded.name, en_name = excluded.en_name,
-           parent_id = excluded.parent_id, updated_at = excluded.updated_at`,
-      );
-      for (const [id, d] of departments) {
-        up.run({ id, name: d.name, en: d.i18n_name?.en_us || null, parent: d.parent_department_id ?? null, now });
-      }
-    })();
-
-    const avatarJobs: { id: number; user: LarkUser; ver: string }[] = [];
-    const byOpenId = db.query("SELECT id, email, avatar_src, avatar_ver FROM users WHERE open_id = $openId");
-    const byEmail = db.query("SELECT id, email, avatar_src, avatar_ver FROM users WHERE email = $email AND open_id IS NULL");
-    const emailTaken = db.query("SELECT id FROM users WHERE email = $email AND id != $id");
-    type Existing = { id: number; email: string | null; avatar_src: string | null; avatar_ver: string | null };
-
-    db.transaction(() => {
-      for (const u of users.values()) {
-        const email = pickEmail(u);
-        const active = u.status?.is_resigned || u.status?.is_exited || u.status?.is_frozen ? 0 : 1;
-        const fields = {
-          openId: u.open_id,
-          name: u.name || u.en_name || email?.split("@")[0] || "?",
-          en: u.en_name || null,
-          dept: primaryDept(u),
-          title: u.job_title || null,
-          active,
-          joined: u.join_time ? u.join_time * 1000 : null,
-          leader: u.leader_user_id || null,
-          now,
-        };
-        let row = (byOpenId.get({ openId: u.open_id }) ?? (email ? byEmail.get({ email }) : null)) as Existing | null;
-        const safeEmail = email && !(emailTaken.get({ email, id: row?.id ?? -1 }) as unknown) ? email : (row?.email ?? null);
-        if (row) {
-          db.query(
-            `UPDATE users SET open_id = $openId, email = $email, name = $name, en_name = $en, dept_id = $dept,
-               job_title = $title, active = $active, joined_at = $joined, leader_open_id = $leader,
-               source = 'lark', updated_at = $now
-             WHERE id = $id`,
-          ).run({ ...fields, email: safeEmail, id: row.id });
-        } else {
-          const res = db
-            .query(
-              `INSERT INTO users (open_id, email, name, en_name, dept_id, job_title, active, joined_at, leader_open_id,
-                                  source, created_at, updated_at)
-               VALUES ($openId, $email, $name, $en, $dept, $title, $active, $joined, $leader, 'lark', $now, $now)`,
-            )
-            .run({ ...fields, email: safeEmail });
-          row = { id: Number(res.lastInsertRowid), email: safeEmail, avatar_src: null, avatar_ver: null };
-        }
-        const src = u.avatar?.avatar_240 ?? null;
-        if (!src) {
-          if (row.avatar_ver) db.query("UPDATE users SET avatar_src = NULL, avatar_ver = NULL WHERE id = $id").run({ id: row.id });
-        } else if (src !== row.avatar_src || !existsSync(join(avatarDir, `${row.id}-240`))) {
-          avatarJobs.push({ id: row.id, user: u, ver: Bun.hash(src).toString(36).slice(0, 10) });
-        }
-      }
-      // People who left (or fell out of the app's contact scope) stay in history but
-      // disappear from pickers. Guard against a broken sync deactivating everyone.
-      if (users.size > 0) {
-        db.query(
-          `UPDATE users SET active = 0, updated_at = $now
-           WHERE source = 'lark' AND active = 1 AND open_id NOT IN (SELECT value FROM json_each($seen))`,
-        ).run({ now, seen: JSON.stringify([...users.keys()]) });
-      }
-    })();
-
-    let avatarsUpdated = 0;
-    const setAvatar = db.query("UPDATE users SET avatar_src = $src, avatar_ver = $ver WHERE id = $id");
-    const queue = [...avatarJobs];
-    await Promise.all(
-      Array.from({ length: 6 }, async () => {
-        for (let job = queue.shift(); job; job = queue.shift()) {
-          try {
-            await downloadAvatar(job.id, job.user);
-            setAvatar.run({ src: job.user.avatar!.avatar_240!, ver: job.ver, id: job.id });
-            avatarsUpdated++;
-          } catch (e) {
-            log("avatar failed", job.user.open_id, (e as Error).message);
-          }
-        }
-      }),
+  db.transaction(() => {
+    const up = db.query(
+      `INSERT INTO departments (id, name, en_name, parent_id, updated_at) VALUES ($id, $name, $en, $parent, $now)
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name, en_name = excluded.en_name,
+         parent_id = excluded.parent_id, updated_at = excluded.updated_at`,
     );
+    for (const [id, d] of departments) {
+      up.run({ id, name: d.name, en: d.i18n_name?.en_us || null, parent: d.parent_department_id ?? null, now });
+    }
+  })();
 
-    const activeCount = [...users.values()].filter((u) => !(u.status?.is_resigned || u.status?.is_exited || u.status?.is_frozen)).length;
-    db.query(
-      `UPDATE sync_runs SET finished_at = $now, ok = 1, users_seen = $seen, users_active = $active, avatars_updated = $avatars
-       WHERE id = $id`,
-    ).run({ now: Date.now(), seen: users.size, active: activeCount, avatars: avatarsUpdated, id: runId });
-    log(`sync ok: ${users.size} users (${activeCount} active), ${departments.size} depts, ${avatarsUpdated} avatars updated`);
-    return { users: users.size, active: activeCount, avatarsUpdated };
-  } catch (e) {
-    const message = (e as Error).message;
-    db.query("UPDATE sync_runs SET finished_at = $now, ok = 0, error = $error WHERE id = $id").run({
-      now: Date.now(),
-      error: message,
-      id: runId,
-    });
-    log("sync failed:", message);
-    throw e;
-  }
-}
+  const avatarJobs: { id: number; user: LarkUser; ver: string }[] = [];
+  const byOpenId = db.query("SELECT id, email, avatar_src, avatar_ver FROM users WHERE open_id = $openId");
+  const byEmail = db.query("SELECT id, email, avatar_src, avatar_ver FROM users WHERE email = $email AND open_id IS NULL");
+  const emailTaken = db.query("SELECT id FROM users WHERE email = $email AND id != $id");
+  type Existing = { id: number; email: string | null; avatar_src: string | null; avatar_ver: string | null };
 
-export function lastSuccessfulSync() {
-  const row = db.query("SELECT finished_at FROM sync_runs WHERE ok = 1 ORDER BY id DESC LIMIT 1").get() as
-    | { finished_at: number }
-    | null;
-  return row?.finished_at ?? 0;
+  db.transaction(() => {
+    for (const u of users.values()) {
+      const email = pickEmail(u);
+      const active = u.status?.is_resigned || u.status?.is_exited || u.status?.is_frozen ? 0 : 1;
+      const fields = {
+        openId: u.open_id,
+        name: u.name || u.en_name || email?.split("@")[0] || "?",
+        en: u.en_name || null,
+        dept: primaryDept(u),
+        title: u.job_title || null,
+        active,
+        joined: u.join_time ? u.join_time * 1000 : null,
+        leader: u.leader_user_id || null,
+        now,
+      };
+      let row = (byOpenId.get({ openId: u.open_id }) ?? (email ? byEmail.get({ email }) : null)) as Existing | null;
+      const safeEmail = email && !(emailTaken.get({ email, id: row?.id ?? -1 }) as unknown) ? email : (row?.email ?? null);
+      if (row) {
+        db.query(
+          `UPDATE users SET open_id = $openId, email = $email, name = $name, en_name = $en, dept_id = $dept,
+             job_title = $title, active = $active, joined_at = $joined, leader_open_id = $leader,
+             leader_email = NULL, source = 'lark', updated_at = $now
+           WHERE id = $id`,
+        ).run({ ...fields, email: safeEmail, id: row.id });
+      } else {
+        const res = db
+          .query(
+            `INSERT INTO users (open_id, email, name, en_name, dept_id, job_title, active, joined_at, leader_open_id,
+                                source, created_at, updated_at)
+             VALUES ($openId, $email, $name, $en, $dept, $title, $active, $joined, $leader, 'lark', $now, $now)`,
+          )
+          .run({ ...fields, email: safeEmail });
+        row = { id: Number(res.lastInsertRowid), email: safeEmail, avatar_src: null, avatar_ver: null };
+      }
+      const src = u.avatar?.avatar_240 ?? null;
+      if (!src) {
+        if (row.avatar_ver) db.query("UPDATE users SET avatar_src = NULL, avatar_ver = NULL WHERE id = $id").run({ id: row.id });
+      } else if (src !== row.avatar_src || !existsSync(avatarFile(row.id, "240"))) {
+        avatarJobs.push({ id: row.id, user: u, ver: Bun.hash(src).toString(36).slice(0, 10) });
+      }
+    }
+    // People who left (or fell out of the app's contact scope) stay in history but
+    // disappear from pickers. Guard against a broken sync deactivating everyone.
+    if (users.size > 0) {
+      db.query(
+        `UPDATE users SET active = 0, updated_at = $now
+         WHERE source = 'lark' AND active = 1 AND open_id NOT IN (SELECT value FROM json_each($seen))`,
+      ).run({ now, seen: JSON.stringify([...users.keys()]) });
+    }
+  })();
+
+  let avatarsUpdated = 0;
+  const setAvatar = db.query("UPDATE users SET avatar_src = $src, avatar_ver = $ver WHERE id = $id");
+  const queue = [...avatarJobs];
+  await Promise.all(
+    Array.from({ length: 6 }, async () => {
+      for (let job = queue.shift(); job; job = queue.shift()) {
+        try {
+          await downloadAvatar(job.id, job.user);
+          setAvatar.run({ src: job.user.avatar!.avatar_240!, ver: job.ver, id: job.id });
+          avatarsUpdated++;
+        } catch (e) {
+          log("avatar failed", job.user.open_id, (e as Error).message);
+        }
+      }
+    }),
+  );
+
+  const activeCount = [...users.values()].filter((u) => !(u.status?.is_resigned || u.status?.is_exited || u.status?.is_frozen)).length;
+  return { seen: users.size, active: activeCount, avatarsUpdated, warnings: [] };
 }
 
 // ---------------------------------------------------------------- notifications
@@ -399,7 +359,7 @@ async function send(receiveIdType: "open_id" | "chat_id", receiveId: string, con
 // the sender gets a receipt "you thanked Y" (and nothing else, even when they thanked or CC'd
 // themselves); public posts can also be broadcast to a group.
 export async function notifyPost(post: NotifyPost, senderRemaining?: number) {
-  if (!larkEnabled() || !config.lark.notify) return;
+  if (!larkNotifyEnabled()) return;
   const { senderId, recipientIds, ccIds } = post;
   const people = db
     .query("SELECT id, name, en_name, open_id, lang FROM users WHERE id IN (SELECT value FROM json_each($ids))")

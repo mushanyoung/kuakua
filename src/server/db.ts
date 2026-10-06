@@ -98,6 +98,10 @@ const migrations = [
   `
   ALTER TABLE posts ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  ALTER TABLE users ADD COLUMN leader_email TEXT;
+  ALTER TABLE sync_runs ADD COLUMN warnings TEXT;
+  `,
 ];
 
 const current = (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;

@@ -5,4 +5,6 @@ data-*/
 .env
 .env.*
 !.env.example
+# deployment-local files: roster, avatars, values, deploy state, tunnel token
+local/
 *.log

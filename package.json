@@ -3,10 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "DATA_DIR=./data-demo DEV_AUTH_EMAIL=mushan@maxinsights.ai PORT=4381 bun --hot src/server/index.ts",
+    "dev": "DATA_DIR=./data-demo DEV_AUTH_EMAIL=mushan@example.com ADMIN_EMAILS=mushan@example.com ALLOWED_EMAIL_DOMAINS=example.com PORT=4381 bun --hot src/server/index.ts",
     "demo:seed": "DATA_DIR=./data-demo bun scripts/seed-demo.ts",
     "start": "NODE_ENV=production bun src/server/index.ts",
     "sync": "NODE_ENV=production bun src/server/sync-cli.ts",
+    "doctor": "bun scripts/config.ts doctor",
+    "config": "bun scripts/config.ts",
+    "deploy": "./scripts/deploy.sh",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
