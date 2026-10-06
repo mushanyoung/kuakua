@@ -11,14 +11,23 @@ export type SyncResult = { seen: number; active: number; avatarsUpdated: number;
 
 const log = (...args: unknown[]) => console.log("[directory]", ...args);
 const source = config.directory.source;
-// A run that hasn't finished after this long is considered dead.
-const STALE_MS = 15 * 60_000;
+// A run that hasn't finished after this long was cut off (e.g. its Worker invocation ended);
+// it's closed as failed so the admin page stops showing it as running.
+const STALE_MS = 5 * 60_000;
+
+async function closeStaleRuns() {
+  await db.run(
+    "UPDATE sync_runs SET finished_at = $now, ok = 0, error = 'interrupted' WHERE finished_at IS NULL AND started_at <= $stale",
+    { now: Date.now(), stale: Date.now() - STALE_MS },
+  );
+}
 
 export async function directoryConfigured() {
   return source === "lark" ? larkEnabled() : Boolean(await rosterObject());
 }
 
 export async function syncRunning() {
+  await closeStaleRuns();
   return Boolean(
     await db.get("SELECT 1 AS running FROM sync_runs WHERE finished_at IS NULL AND started_at > $stale", { stale: Date.now() - STALE_MS }),
   );
@@ -31,6 +40,7 @@ export async function syncDirectory(trigger: string): Promise<SyncResult | null>
   if (source === "lark" ? !larkEnabled() : !ref) {
     throw new Error(source === "lark" ? "LARK_APP_ID / LARK_APP_SECRET not configured" : "no roster uploaded yet");
   }
+  await closeStaleRuns();
   const now = Date.now();
   const run = await db.get<{ id: number }>(
     `INSERT INTO sync_runs (trigger, started_at, source_ref)
@@ -54,7 +64,7 @@ export async function syncDirectory(trigger: string): Promise<SyncResult | null>
         id: run.id,
       },
     );
-    log(`${source} sync ok: ${r.seen} people (${r.active} active), ${r.avatarsUpdated} avatars updated`);
+    log(`${source} sync ok in ${((Date.now() - now) / 1000).toFixed(1)} s: ${r.seen} people (${r.active} active), ${r.avatarsUpdated} avatars updated`);
     for (const w of r.warnings) log("warning:", w);
     return r;
   } catch (e) {

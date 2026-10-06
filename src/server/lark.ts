@@ -12,10 +12,17 @@ const log = (...args: unknown[]) => console.log("[lark]", ...args);
 
 type LarkBody<T> = { code: number; msg: string; data?: T; tenant_access_token?: string; expire?: number };
 
+// Cached per Worker instance; concurrent callers share one in-flight request.
 let token: { value: string; expiresAt: number } | null = null;
+let tokenRequest: Promise<string> | null = null;
 
-async function tenantToken(force = false) {
-  if (!force && token && Date.now() < token.expiresAt) return token.value;
+function tenantToken(force = false): Promise<string> {
+  if (!force && token && Date.now() < token.expiresAt) return Promise.resolve(token.value);
+  tokenRequest ??= fetchTenantToken().finally(() => (tokenRequest = null));
+  return tokenRequest;
+}
+
+async function fetchTenantToken() {
   const res = await fetch(`${config.lark.baseUrl}/open-apis/auth/v3/tenant_access_token/internal`, {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
@@ -100,18 +107,35 @@ type LarkUser = {
 
 const ID_TYPES = { user_id_type: "open_id", department_id_type: "open_department_id" };
 
+// Runs fn over items with at most `limit` in flight.
+async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>) {
+  const queue = [...items];
+  await Promise.all(
+    Array.from({ length: Math.min(limit, queue.length) }, async () => {
+      for (let item = queue.shift(); item !== undefined; item = queue.shift()) await fn(item);
+    }),
+  );
+}
+
+async function collect<T>(path: string, query: Record<string, string | undefined>, key = "items") {
+  const out: T[] = [];
+  for await (const page of paginate<T>(path, query, key)) out.push(...page);
+  return out;
+}
+
+// Departments and their members are fetched in parallel (pages of one department in order):
+// done one at a time, ~25 departments took ~30 s, too close to Workers' limits.
+const LARK_CONCURRENCY = 6;
+
 async function fetchDirectory() {
-  const deptIds = new Set<string>();
-  const looseUsers = new Set<string>();
-  for await (const page of paginate<never>("/open-apis/contact/v3/scopes", { ...ID_TYPES, page_size: "100" }, "department_ids")) {
-    for (const id of page as string[]) deptIds.add(id);
-  }
-  for await (const page of paginate<never>("/open-apis/contact/v3/scopes", { ...ID_TYPES, page_size: "100" }, "user_ids")) {
-    for (const id of page as string[]) looseUsers.add(id);
-  }
+  const scopes = { ...ID_TYPES, page_size: "100" };
+  const [deptIds, looseUsers] = await Promise.all([
+    collect<string>("/open-apis/contact/v3/scopes", scopes, "department_ids"),
+    collect<string>("/open-apis/contact/v3/scopes", scopes, "user_ids"),
+  ]);
 
   const departments = new Map<string, LarkDept>();
-  for (const id of [...deptIds]) {
+  await pool([...new Set(deptIds)], LARK_CONCURRENCY, async (id) => {
     if (id !== "0") {
       try {
         const d = await lark<{ department: LarkDept }>("GET", `/open-apis/contact/v3/departments/${id}`, ID_TYPES);
@@ -120,34 +144,30 @@ async function fetchDirectory() {
         log("department lookup failed", id, (e as Error).message);
       }
     }
-    for await (const page of paginate<LarkDept>(`/open-apis/contact/v3/departments/${id}/children`, {
+    const children = await collect<LarkDept>(`/open-apis/contact/v3/departments/${id}/children`, {
       ...ID_TYPES,
       fetch_child: "true",
       page_size: "50",
-    })) {
-      for (const d of page) if (!d.status?.is_deleted) departments.set(d.open_department_id, d);
-    }
-  }
+    });
+    for (const d of children) if (!d.status?.is_deleted) departments.set(d.open_department_id, d);
+  });
 
   const users = new Map<string, LarkUser>();
-  const memberDepts = new Set([...deptIds, ...departments.keys()]);
-  for (const id of memberDepts) {
-    for await (const page of paginate<LarkUser>("/open-apis/contact/v3/users/find_by_department", {
+  await pool([...new Set([...deptIds, ...departments.keys()])], LARK_CONCURRENCY, async (id) => {
+    const members = await collect<LarkUser>("/open-apis/contact/v3/users/find_by_department", {
       ...ID_TYPES,
       department_id: id,
       page_size: "50",
-    })) {
-      for (const u of page) users.set(u.open_id, u);
-    }
-  }
-  const missing = [...looseUsers].filter((id) => !users.has(id));
-  for (let i = 0; i < missing.length; i += 50) {
-    const data = await lark<{ items?: LarkUser[] }>("GET", "/open-apis/contact/v3/users/batch", {
-      user_id_type: "open_id",
-      user_ids: missing.slice(i, i + 50),
     });
+    for (const u of members) users.set(u.open_id, u);
+  });
+
+  const missing = [...new Set(looseUsers)].filter((id) => !users.has(id));
+  const batches = Array.from({ length: Math.ceil(missing.length / 50) }, (_, i) => missing.slice(i * 50, i * 50 + 50));
+  await pool(batches, LARK_CONCURRENCY, async (ids) => {
+    const data = await lark<{ items?: LarkUser[] }>("GET", "/open-apis/contact/v3/users/batch", { user_id_type: "open_id", user_ids: ids });
     for (const u of data?.items ?? []) users.set(u.open_id, u);
-  }
+  });
   return { departments, users };
 }
 

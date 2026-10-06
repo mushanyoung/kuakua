@@ -125,21 +125,28 @@ route(
   "GET",
   "/api/admin/status",
   async () => ({
-    ...(await store.syncStatus()),
+    // First, so runs it closes as interrupted show up as such below.
     running: await syncRunning(),
+    ...(await store.syncStatus()),
     source: config.directory.source,
     configured: await directoryConfigured(),
     periods: await store.bonusPeriods(),
   }),
   { admin: true },
 );
+// Runs the sync inside the request rather than after responding: work left to waitUntil()
+// gets cut off ~30 s after the response, which a full Lark sync can exceed.
 route(
   "POST",
   "/api/admin/sync",
-  async ({ ctx }) => {
+  async () => {
     if (!(await directoryConfigured())) throw new HttpError(409, "directory_not_configured");
-    ctx.waitUntil(syncDirectory("manual").catch(() => {}));
-    return { started: true };
+    try {
+      const result = await syncDirectory("manual");
+      return result ? { ok: true, ...result } : { ok: true, alreadyRunning: true };
+    } catch (e) {
+      throw new HttpError(502, "sync_failed", (e as Error).message);
+    }
   },
   { admin: true },
 );
@@ -215,7 +222,8 @@ export default {
     return env.ASSETS.fetch(req);
   },
 
-  async scheduled(_controller, _env, ctx) {
-    ctx.waitUntil(maybeSync("schedule"));
+  // Awaited rather than handed to waitUntil(): a cron invocation may run for up to 15 minutes.
+  async scheduled() {
+    await maybeSync("schedule");
   },
 } satisfies ExportedHandler<Env>;

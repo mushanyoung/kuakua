@@ -186,6 +186,7 @@ const zh = {
   "err.invalid_access_token": "登录已过期，请刷新页面",
   "err.forbidden": "没有权限",
   "err.directory_not_configured": "通讯录来源还没配置好",
+  "err.sync_failed": "同步失败，原因见下方",
   "err.internal": "出了点问题，请稍后重试",
   "err.network": "网络好像断了，请稍后重试",
 };
@@ -378,6 +379,7 @@ const en: Record<Key, string> = {
   "err.invalid_access_token": "Session expired — please refresh",
   "err.forbidden": "Not allowed",
   "err.directory_not_configured": "The people directory isn't configured yet",
+  "err.sync_failed": "Sync failed — see below for why",
   "err.internal": "Something went wrong, please retry",
   "err.network": "Network hiccup, please retry",
 };

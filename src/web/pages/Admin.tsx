@@ -40,6 +40,8 @@ export function Admin() {
   const periods = [...new Set([thisPeriod(), ...(status.data?.periods ?? [])])].sort().reverse();
   const [period, setPeriod] = useState(thisPeriod());
   const report = useApi<Report>(me.isAdmin ? `/api/admin/bonus-report?period=${period}` : null, [period]);
+  // The sync runs inside the POST, so this covers its whole duration.
+  const [syncing, setSyncing] = useState(false);
 
   const wasRunning = useRef(false);
   useEffect(() => {
@@ -57,13 +59,18 @@ export function Admin() {
   const warnings: string[] = s?.last?.ok && s.last.warnings ? JSON.parse(s.last.warnings) : [];
 
   async function sync() {
+    setSyncing(true);
     try {
       await api("/api/admin/sync", { method: "POST", body: {} });
-      status.reload();
+      bumpFeed();
     } catch (e) {
       toast(errorText(t, (e as { code: string }).code), "error");
+    } finally {
+      setSyncing(false);
+      status.reload();
     }
   }
+  const busy = syncing || Boolean(s?.running);
 
   const runLine = (r: Run | null) =>
     !r ? t("admin.never") : `${relativeTime(r.started_at, lang, t)} · ${r.trigger} · ${r.ok ? t("admin.ok") : r.ok === 0 ? t("admin.failed") : "…"}`;
@@ -95,8 +102,8 @@ export function Admin() {
         <section className="side-card">
           <div className="side-head">
             <h3>{t(roster ? "admin.syncRoster" : "admin.syncLark")}</h3>
-            <button type="button" className="btn soft sm" disabled={!s?.configured || s?.running} onClick={sync}>
-              <ArrowPathIcon className={`ic ${s?.running ? "spin" : ""}`} /> {s?.running ? t("admin.syncing") : t("admin.syncNow")}
+            <button type="button" className="btn soft sm" disabled={!s?.configured || busy} onClick={sync}>
+              <ArrowPathIcon className={`ic ${busy ? "spin" : ""}`} /> {busy ? t("admin.syncing") : t("admin.syncNow")}
             </button>
           </div>
           {!s && <Spinner />}
