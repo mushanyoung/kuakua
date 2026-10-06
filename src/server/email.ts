@@ -3,7 +3,8 @@ import { config } from "./config";
 import { copy, nameIn, site, type Lang, type Notice } from "./notify";
 
 // Notification emails through Cloudflare Email Service (the EMAIL send_email binding, only
-// configured when EMAIL_NOTIFY=1). One email per person thanked or CC'd, in their language;
+// configured when EMAIL_NOTIFY=1). One email per person on the post — thanked or CC'd,
+// including the sender when they put themselves there (their copy) — in their language;
 // replying reaches the sender. People can switch them off on their profile (users.email_notify).
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -29,26 +30,30 @@ function button(href: string, label: string) {
   return `<a href="${esc(href)}" style="display:inline-block;margin-top:18px;padding:10px 20px;border-radius:999px;background:#ff6b8b;color:#ffffff;font-weight:600;font-size:14px;text-decoration:none">${esc(label)}</a>`;
 }
 
+// The sender's own copy has nobody to reply to.
+const replyable = (n: Notice) => Boolean(n.sender.email) && n.person?.id !== n.sender.id;
+
 function render(n: Notice) {
   const c = copy[n.lang];
   const sender = nameIn(n.sender, n.lang);
+  const details = [...n.details, ...(n.remaining ? [n.remaining] : [])];
   const accent = n.post.kind === "bonus" ? "#ff9f6b" : "#ff6b8b";
   const html = layout(
     n.lang,
     `<h1 style="font-size:19px;line-height:1.4;margin:0 0 16px">${esc(n.title)}</h1>
 <div style="margin:0;padding:12px 16px;border-left:4px solid ${accent};background:#fff6f8;border-radius:6px;font-size:16px;line-height:1.75;white-space:pre-wrap">${esc(n.post.message)}</div>
-${n.details.length ? `<p style="font-size:13px;color:#6b6175;margin:12px 0 0">${n.details.map(esc).join(" · ")}</p>` : ""}
+${details.length ? `<p style="font-size:13px;color:#6b6175;margin:12px 0 0">${details.map(esc).join(" · ")}</p>` : ""}
 ${button(n.url, c.open)}
-${n.sender.email ? `<p style="font-size:13px;color:#8d849b;margin:18px 0 0">${esc(c.replyHint(sender))}</p>` : ""}`,
+${replyable(n) ? `<p style="font-size:13px;color:#8d849b;margin:18px 0 0">${esc(c.replyHint(sender))}</p>` : ""}`,
   );
   const text = [
     n.title,
     "",
     `“${n.post.message}”`,
-    ...(n.details.length ? ["", n.details.join(" · ")] : []),
+    ...(details.length ? ["", details.join(" · ")] : []),
     "",
     `${c.open}: ${n.url}`,
-    ...(n.sender.email ? ["", c.replyHint(sender)] : []),
+    ...(replyable(n) ? ["", c.replyHint(sender)] : []),
     "",
     "--",
     `${site()} · ${c.optOut}: ${config.publicUrl}/u/me`,
@@ -58,15 +63,19 @@ ${n.sender.email ? `<p style="font-size:13px;color:#8d849b;margin:18px 0 0">${es
 
 export async function sendEmailNotices(notices: Notice[]) {
   const mail = mailer();
+  const onPost = (id: number, n: Notice) => n.post.recipientIds.includes(id) || n.post.ccIds.includes(id);
   const targets = notices.filter(
-    (n) => (n.role === "recipient" || n.role === "cc") && n.person?.email && n.person.email_notify === 1,
+    (n) =>
+      (n.role === "recipient" || n.role === "cc" || (n.role === "sender" && onPost(n.sender.id, n))) &&
+      n.person?.email &&
+      n.person.email_notify === 1,
   );
   const results = await Promise.allSettled(
     targets.map((n) =>
       mail.send({
         to: n.person!.email!,
         from: from(),
-        ...(n.sender.email ? { replyTo: { email: n.sender.email, name: nameIn(n.sender, n.lang) } } : {}),
+        ...(replyable(n) ? { replyTo: { email: n.sender.email!, name: nameIn(n.sender, n.lang) } } : {}),
         subject: n.title,
         ...render(n),
       }),

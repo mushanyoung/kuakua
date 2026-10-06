@@ -8,7 +8,8 @@ import { valueById } from "../shared/values";
 // decide how to deliver each Notice:
 //   recipient  "X thanked you"                   Lark DM, email
 //   cc         "X thanked Y · cc'd to you"       Lark DM, email
-//   sender     "you thanked Y" (a receipt)       Lark DM only
+//   sender     "you thanked Y" (a receipt)       Lark DM; email only when the sender put
+//                                                themselves among those thanked or CC'd
 //   broadcast  "X thanked Y", public posts only  the Lark group (LARK_BROADCAST_CHAT_ID)
 // Nobody gets a second notice about their own post, even when they thanked or CC'd themselves.
 
@@ -20,6 +21,8 @@ export const copy = {
     broadcastKudos: (s: string, r: string) => `${s} 夸了 ${r}`,
     broadcastBonus: (s: string, r: string, p: number) => `${s} 给 ${r} 发了 Peer Bonus · 每人 +${p}`,
     sentKudos: (r: string) => `你夸了 ${r}`,
+    sentSelf: "你夸了自己",
+    self: "自己",
     sentBonus: (r: string, p: number, many: boolean) => `你给 ${r} 发了 Peer Bonus · ${many ? "每人 " : ""}+${p}`,
     ccKudos: (s: string, r: string) => `${s} 夸了 ${r} · 抄送给你`,
     ccBonus: (s: string, r: string) => `${s} 给 ${r} 发了 Peer Bonus · 抄送给你`,
@@ -41,6 +44,8 @@ export const copy = {
     broadcastKudos: (s: string, r: string) => `${s} gave kudos to ${r}`,
     broadcastBonus: (s: string, r: string, p: number) => `${s} sent ${r} a Peer Bonus · +${p} each`,
     sentKudos: (r: string) => `You gave kudos to ${r}`,
+    sentSelf: "You gave yourself kudos",
+    self: "yourself",
     sentBonus: (r: string, p: number, many: boolean) => `You sent ${r} a Peer Bonus · +${p}${many ? " each" : ""}`,
     ccKudos: (s: string, r: string) => `${s} gave kudos to ${r} · cc'd to you`,
     ccBonus: (s: string, r: string) => `${s} sent ${r} a Peer Bonus · cc'd to you`,
@@ -103,17 +108,18 @@ export function buildNotices(post: NotifyPost, people: Map<number, Person>, send
   const sender = people.get(post.senderId);
   if (!sender) return [];
   const bonus = post.kind === "bonus";
-  const list = (ids: number[], lang: Lang) => {
+  // In the sender's own receipt they appear as "yourself".
+  const list = (ids: number[], lang: Lang, self?: number) => {
     const c = copy[lang];
-    const all = ids.map((id) => people.get(id)).map((p) => (p ? nameIn(p, lang) : "?"));
+    const all = ids.map((id) => (id === self ? c.self : people.get(id) ? nameIn(people.get(id)!, lang) : "?"));
     return all.length <= 3 ? all.join(c.sep) : all.slice(0, 3).join(c.sep) + c.andMore(all.length);
   };
-  const details = (lang: Lang, withCc: boolean) => {
+  const details = (lang: Lang, withCc: boolean, self?: number) => {
     const tag = valueById(post.valueTag);
     return [
       post.private ? copy[lang].private : null,
       tag ? `# ${lang === "zh" ? tag.zh : tag.en}` : null,
-      withCc && post.ccIds.length ? copy[lang].ccNote(list(post.ccIds, lang)) : null,
+      withCc && post.ccIds.length ? copy[lang].ccNote(list(post.ccIds, lang, self)) : null,
     ].filter((d): d is string => Boolean(d));
   };
   const base = { sender, post, url: `${config.publicUrl}/k/${post.id}`, remaining: null };
@@ -139,10 +145,11 @@ export function buildNotices(post: NotifyPost, people: Map<number, Person>, send
   {
     const lang = langOf(sender);
     const c = copy[lang];
-    const names = list(post.recipientIds, lang);
-    const title = bonus ? c.sentBonus(names, post.points, post.recipientIds.length > 1) : c.sentKudos(names);
+    const names = list(post.recipientIds, lang, sender.id);
+    const onlySelf = post.recipientIds.length === 1 && post.recipientIds[0] === sender.id;
+    const title = bonus ? c.sentBonus(names, post.points, post.recipientIds.length > 1) : onlySelf ? c.sentSelf : c.sentKudos(names);
     const remaining = bonus && senderRemaining !== undefined ? c.remaining(senderRemaining) : null;
-    notices.push({ ...base, role: "sender", person: sender, lang, title, details: details(lang, true), remaining });
+    notices.push({ ...base, role: "sender", person: sender, lang, title, details: details(lang, true, sender.id), remaining });
   }
   if (!post.private) {
     const c = copy.zh;
