@@ -1,8 +1,9 @@
 import { authenticate } from "./auth";
 import { serveAvatar } from "./avatars";
-import { config, larkNotifyEnabled } from "./config";
+import { config, emailNotifyEnabled, larkNotifyEnabled, notifyChannels } from "./config";
 import { directoryConfigured, maybeSync, syncDirectory, syncRunning } from "./directory";
-import { notifyPost } from "./lark";
+import { sendTestEmail } from "./email";
+import { langOf, notifyPost } from "./notify";
 import * as store from "./store";
 import { HttpError, type Viewer } from "./store";
 import { isPeriod, periodOf, type Range } from "./time";
@@ -54,12 +55,13 @@ async function me(viewer: Viewer) {
     email: viewer.email,
     isAdmin: viewer.isAdmin,
     lang: viewer.row.lang,
+    emailNotify: viewer.row.email_notify === 1,
     allowance: await store.allowance(viewer.id),
     config: {
       monthlyAllowance: config.bonus.monthlyAllowance,
       bonusPoints: config.bonus.points,
-      // Whether people get Lark notifications.
-      lark: larkNotifyEnabled(),
+      // How people thanked or CC'd are notified: "lark", "email".
+      notify: notifyChannels(),
       directory: config.directory.source,
       timezone: config.timezone,
       values: values(),
@@ -70,7 +72,7 @@ async function me(viewer: Viewer) {
 // ---------------------------------------------------------------- routes
 
 route("GET", "/api/me", ({ viewer }) => me(viewer));
-route("PUT", "/api/me/prefs", async ({ req, viewer }) => store.setLang(viewer.id, String((await body(req)).lang)));
+route("PUT", "/api/me/prefs", async ({ req, viewer }) => store.setPrefs(viewer.id, await body(req)));
 
 route("GET", "/api/users", ({ viewer }) => store.listUsers(viewer));
 route("GET", "/api/users/:id", ({ params, viewer }) => store.profile(params.id === "me" ? viewer.id : (intParam(params.id) ?? 0), viewer));
@@ -131,7 +133,27 @@ route(
     source: config.directory.source,
     configured: await directoryConfigured(),
     periods: await store.bonusPeriods(),
+    notify: {
+      lark: larkNotifyEnabled(),
+      larkBroadcast: larkNotifyEnabled() && Boolean(config.lark.broadcastChatId),
+      email: emailNotifyEnabled(),
+      emailFrom: config.email.notify ? config.email.from : null,
+    },
   }),
+  { admin: true },
+);
+// Sends a test email to the admin, to check EMAIL_FROM's domain is onboarded.
+route(
+  "POST",
+  "/api/admin/test-email",
+  async ({ viewer }) => {
+    if (!emailNotifyEnabled()) throw new HttpError(409, "email_not_configured");
+    try {
+      return { ok: true, to: viewer.email, messageId: await sendTestEmail(viewer.email, langOf(viewer.row)) };
+    } catch (e) {
+      return { ok: false, to: viewer.email, error: (e as Error).message };
+    }
+  },
   { admin: true },
 );
 // Runs the sync inside the request rather than after responding: work left to waitUntil()

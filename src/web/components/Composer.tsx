@@ -3,7 +3,7 @@ import confetti from "canvas-confetti";
 import { ChatBubbleLeftRightIcon, GiftIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { BellAlertIcon, LockClosedIcon } from "@heroicons/react/20/solid";
 import { altName, api, type PostDetail, type Allowance, type User } from "../api";
-import { errorText } from "../i18n";
+import { channelsText, errorText } from "../i18n";
 import { useApp, type ComposerPrefill } from "../state";
 import { LIMITS, values } from "../../shared/values";
 import { Avatar, ValueChip } from "./ui";
@@ -178,7 +178,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           suggest={suggestTo}
         />
         <label className="field-label" htmlFor="composer-cc">
-          {t("composer.cc")} <small>{me.config.lark ? t("composer.ccHintLark") : t("composer.ccHint")}</small>
+          {t("composer.cc")} <small>{me.config.notify.length ? t("composer.ccHintNotify", { channels: channelsText(t, me.config.notify) }) : t("composer.ccHint")}</small>
         </label>
         <PeoplePicker
           id="composer-cc"
@@ -250,9 +250,9 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
 
         <div className="modal-foot">
           <span className="hint">
-            {me.config.lark ? (
+            {me.config.notify.length ? (
               <>
-                <BellAlertIcon className="ic" /> {t("composer.notify")}
+                <BellAlertIcon className="ic" /> {t("composer.notify", { channels: channelsText(t, me.config.notify) })}
               </>
             ) : (
               t("composer.shortcut")

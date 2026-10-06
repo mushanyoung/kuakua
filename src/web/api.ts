@@ -42,11 +42,12 @@ export type Me = {
   email: string;
   isAdmin: boolean;
   lang: "zh" | "en" | null;
+  emailNotify: boolean;
   allowance: Allowance;
   config: {
     monthlyAllowance: number;
     bonusPoints: number;
-    lark: boolean;
+    notify: ("lark" | "email")[];
     directory: "lark" | "roster";
     timezone: string;
     values: ValueTag[];

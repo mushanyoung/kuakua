@@ -46,6 +46,7 @@ bun install
 | 数据放在哪 | `DATA_LOCATION` | D1 和 R2 的区域；用户在亚洲就填 `apac`。只在第一次创建时生效 |
 | 同一账号多个部署？ | `WORKER_NAME` | 每个部署一个名字（D1、R2 跟着它命名） |
 | Lark 每日同步时间 | `SYNC_CRON` | UTC 的 cron，默认 `0 19 * * *`（北京时间凌晨 3 点） |
+| 邮件通知 | `EMAIL_NOTIFY`、`EMAIL_FROM`、`EMAIL_FROM_NAME` | 开了（`1`）就给被夸、被抄送的人发邮件，名单和 Lark 两种来源都能用；发件地址的域名要先开通发信，见下文"邮件通知" |
 
 `doctor` 里 "Not in the config file yet" 下列出的项，即使用默认值也请 `config set` 一次写进文件——这样以后升级时，新增的配置项才会单独显眼地出现在这个列表里。
 
@@ -93,6 +94,20 @@ CSV，第一行是表头，列顺序随意，只有 `email`、`name` 必填。�
 
 它会建/复用 D1、R2、Access 策略和应用，并把 `CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`、`D1_DATABASE_ID` 写进 `.env.production`。如果它说 hostname 上还有别的 DNS 记录，那条记录会挡住 Worker；确认可以替换后用 `--replace-dns` 重跑。
 
+### 邮件通知（可选，`EMAIL_NOTIFY=1`）
+
+走 Cloudflare Email Service，不需要第三方邮件服务。被夸的人和被抄送的人各收一封（按各自的界面语言；秘密夸会注明"仅相关的人可见"），直接回复就是回复发送人；每个人可以在自己的主页关掉。发送人不另收邮件。
+
+`EMAIL_FROM` 的域名要先在 Cloudflare 开通 Email Sending。开通会加这些 DNS 记录：
+
+- `cf-bounce.<域名>` 上的 MX 和 SPF（退信用；**不碰**域名本身的 MX，公司邮箱照常收信）
+- `cf-bounce._domainkey.<域名>` 的 DKIM（和已有的 DKIM 记录并存）
+- `_dmarc.<域名>` 的 DMARC——这是唯一和域名本身重叠的一条：如果已经有 DMARC 记录，开通后确认只剩一条
+
+所以根域名（如 `kudos@example.com`）和子域名（如 `kudos@notify.example.com`）都可以；子域名的好处只是把这类通知邮件的发信信誉和公司日常邮件分开。
+
+开通方式二选一：在 Cloudflare 后台 Email Service → Email Sending → Onboard Domain；或给 API Token 加上 Email Sending 的编辑权限后跑 `./scripts/cloudflare-setup.sh --enable-email`（不带这个参数时脚本只检查、不改 DNS）。部署后在管理页"通知"里点"给我发一封测试邮件"验证。
+
 ### 3. 部署
 
 ```bash
@@ -122,6 +137,7 @@ bun run doctor
 |---|---|
 | 加人 / 删人 / 改名 / 换上级 / 换头像 | 改名单文件和头像 → `bun scripts/push-roster.ts`（或整个 `./scripts/deploy.sh`），一分钟内生效。加删了邮箱的话再跑 `./scripts/cloudflare-setup.sh` 更新登录名单 |
 | 改 `.env.production` 里任何一项 | `bun run config set KEY VALUE` → `./scripts/deploy.sh` |
+| 开 / 关邮件通知 | `config set EMAIL_NOTIFY 1`（及 `EMAIL_FROM`）→ `./scripts/cloudflare-setup.sh` 检查发信域名 → `./scripts/deploy.sh` → 管理页发测试邮件 |
 | 改品质标签 | 改 `VALUES_FILE` 指向的文件 → `./scripts/deploy.sh`。已用过的标签 id 不要删改，否则旧帖子上的标签不再显示 |
 | 换域名 | `config set PUBLIC_URL ...` → `./scripts/cloudflare-setup.sh` → `./scripts/deploy.sh` |
 

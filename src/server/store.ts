@@ -28,6 +28,7 @@ export type UserRow = {
   active: number;
   source: string;
   lang: string | null;
+  email_notify: number;
   joined_at: number | null;
   last_seen_at: number | null;
   leader_id: number | null;
@@ -49,7 +50,7 @@ export type UserDTO = {
 
 const USER_SELECT = `
   SELECT u.id, u.open_id, u.email, u.name, u.en_name, u.avatar_ver, u.avatar_key, u.dept_id, u.job_title,
-         u.active, u.source, u.lang, u.joined_at, u.last_seen_at,
+         u.active, u.source, u.lang, u.email_notify, u.joined_at, u.last_seen_at,
          d.name AS dept_name, d.en_name AS dept_en, l.id AS leader_id
   FROM users u LEFT JOIN departments d ON d.id = u.dept_id
   LEFT JOIN users l ON l.active = 1 AND (l.open_id = u.leader_open_id OR l.email = u.leader_email)`;
@@ -120,9 +121,16 @@ export async function resolveViewer(email: string): Promise<Viewer> {
   return { id: row.id, email, isAdmin: ADMIN_EMAILS.has(email), row };
 }
 
-export async function setLang(userId: number, lang: string) {
-  if (lang !== "zh" && lang !== "en") throw new HttpError(400, "bad_lang");
-  await db.run("UPDATE users SET lang = $lang WHERE id = $id", { lang, id: userId });
+// Personal preferences: interface (and notification) language, and notification emails.
+export async function setPrefs(userId: number, prefs: { lang?: unknown; emailNotify?: unknown }) {
+  if (prefs.lang !== undefined) {
+    if (prefs.lang !== "zh" && prefs.lang !== "en") throw new HttpError(400, "bad_lang");
+    await db.run("UPDATE users SET lang = $lang WHERE id = $id", { lang: prefs.lang, id: userId });
+  }
+  if (prefs.emailNotify !== undefined) {
+    if (typeof prefs.emailNotify !== "boolean") throw new HttpError(400, "bad_pref");
+    await db.run("UPDATE users SET email_notify = $on WHERE id = $id", { on: prefs.emailNotify, id: userId });
+  }
 }
 
 // ---------------------------------------------------------------- directory

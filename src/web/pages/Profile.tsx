@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { altName, type User, type Users } from "../api";
+import { EnvelopeIcon } from "@heroicons/react/20/solid";
+import { altName, api, type User, type Users } from "../api";
 import { Feed } from "../components/Feed";
 import { KuaLinkButton } from "../components/KuaLink";
 import { Avatar, CountUp, Empty, Segmented, Spinner, ValueChip } from "../components/ui";
@@ -49,6 +50,7 @@ export function ProfilePage({ id }: { id: string }) {
                 <button type="button" className="btn soft sm" onClick={() => openComposer({ recipientIds: [u.id] })}>
                   {t("profile.thankSelf")}
                 </button>
+                {me.config.notify.includes("email") && <EmailToggle />}
                 {me.isAdmin && (
                   <Link to="/admin" className="btn soft sm">
                     {t("nav.admin")}
@@ -152,5 +154,29 @@ export function ProfilePage({ id }: { id: string }) {
         </aside>
       </div>
     </div>
+  );
+}
+
+// Your own profile: switch notification emails on or off (EMAIL_NOTIFY deployments only).
+function EmailToggle() {
+  const { t, me, setMe, toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  const on = me.emailNotify;
+  async function toggle() {
+    setBusy(true);
+    try {
+      await api("/api/me/prefs", { method: "PUT", body: { emailNotify: !on } });
+      setMe({ ...me, emailNotify: !on });
+      toast(t(on ? "profile.emailTurnedOff" : "profile.emailTurnedOn"));
+    } catch (e) {
+      toast(errorText(t, (e as { code: string }).code), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button type="button" className={`btn soft sm email-toggle ${on ? "on" : ""}`} aria-pressed={on} disabled={busy} onClick={toggle}>
+      <EnvelopeIcon className="ic" /> {t(on ? "profile.emailOn" : "profile.emailOff")}
+    </button>
   );
 }

@@ -107,6 +107,16 @@ function doctor() {
     ok(`Lark directory via ${effective(env, "LARK_BASE_URL")}, synced daily (${effective(env, "SYNC_CRON")} UTC)`);
   }
 
+  if (effective(env, "EMAIL_NOTIFY") === "1") {
+    section("Email");
+    const from = effective(env, "EMAIL_FROM");
+    if (from) {
+      ok(`notification emails from ${from}`);
+      console.log(`  · ${from.split("@")[1]} must be onboarded to Cloudflare Email Sending — scripts/cloudflare-setup.sh checks;`);
+      console.log("    once deployed, the admin page can send you a test email");
+    }
+  }
+
   section("Values");
   const valuesFile = effective(env, "VALUES_FILE");
   if (!valuesFile) ok("built-in values");
@@ -177,6 +187,8 @@ function wranglerConfig() {
     },
     d1_databases: [{ binding: "DB", database_name: name, database_id: effective(env, "D1_DATABASE_ID"), migrations_dir: "../migrations" }],
     r2_buckets: [{ binding: "FILES", bucket_name: `${name}-files` }],
+    // Cloudflare Email Service; only bound when notification emails are on.
+    ...(effective(env, "EMAIL_NOTIFY") === "1" ? { send_email: [{ name: "EMAIL" }] } : {}),
     triggers: { crons: [effective(env, "SYNC_CRON")] },
     vars,
     observability: { enabled: true },
@@ -218,6 +230,7 @@ function example() {
     access: "Who can sign in",
     directory: "People directory",
     lark: "Lark / Feishu (DIRECTORY_SOURCE=lark)",
+    notify: "Email notifications",
     app: "Thanks & Peer Bonus",
     cloudflare: "Cloudflare",
   };

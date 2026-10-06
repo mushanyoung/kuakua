@@ -1,8 +1,8 @@
 import { putAvatar, shortHash } from "./avatars";
-import { config, isAllowedEmail, larkNotifyEnabled } from "./config";
+import { config, isAllowedEmail } from "./config";
 import { db, q } from "./db";
 import type { SyncResult } from "./directory";
-import { valueById } from "../shared/values";
+import { copy, site, type Notice } from "./notify";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -316,75 +316,22 @@ export async function syncLark(): Promise<SyncResult> {
 
 // ---------------------------------------------------------------- notifications
 
-type NotifyPost = {
-  id: number;
-  kind: "kudos" | "bonus";
-  message: string;
-  valueTag: string | null;
-  points: number;
-  senderId: number;
-  recipientIds: number[];
-  ccIds: number[];
-  private: boolean;
-};
-
-const copy = {
-  zh: {
-    kudos: (s: string) => `${s} 夸了你`,
-    bonus: (s: string, p: number) => `${s} 给你发了一份 Peer Bonus · +${p}`,
-    open: "去看看",
-    broadcastKudos: (s: string, r: string) => `${s} 夸了 ${r}`,
-    broadcastBonus: (s: string, r: string, p: number) => `${s} 给 ${r} 发了 Peer Bonus · 每人 +${p}`,
-    sentKudos: (r: string) => `你夸了 ${r}`,
-    sentBonus: (r: string, p: number, many: boolean) => `你给 ${r} 发了 Peer Bonus · ${many ? "每人 " : ""}+${p}`,
-    ccKudos: (s: string, r: string) => `${s} 夸了 ${r} · 抄送给你`,
-    ccBonus: (s: string, r: string) => `${s} 给 ${r} 发了 Peer Bonus · 抄送给你`,
-    ccNote: (names: string) => `抄送：${names}`,
-    remaining: (n: number) => `本月剩余 ${n} 积分`,
-    private: "🔒 秘密夸夸 · 仅相关的人可见",
-    andMore: (n: number) => `等 ${n} 人`,
-    sep: "、",
-  },
-  en: {
-    kudos: (s: string) => `${s} sent you kudos`,
-    bonus: (s: string, p: number) => `${s} sent you a Peer Bonus · +${p}`,
-    open: "Open",
-    broadcastKudos: (s: string, r: string) => `${s} gave kudos to ${r}`,
-    broadcastBonus: (s: string, r: string, p: number) => `${s} sent ${r} a Peer Bonus · +${p} each`,
-    sentKudos: (r: string) => `You gave kudos to ${r}`,
-    sentBonus: (r: string, p: number, many: boolean) => `You sent ${r} a Peer Bonus · +${p}${many ? " each" : ""}`,
-    ccKudos: (s: string, r: string) => `${s} gave kudos to ${r} · cc'd to you`,
-    ccBonus: (s: string, r: string) => `${s} sent ${r} a Peer Bonus · cc'd to you`,
-    ccNote: (names: string) => `CC: ${names}`,
-    remaining: (n: number) => `${n} pts left this month`,
-    private: "🔒 Private · only the people on it can see it",
-    andMore: (n: number) => ` and ${n} others`,
-    sep: ", ",
-  },
-};
-
-type Lang = keyof typeof copy;
-
-function card(title: string, post: NotifyPost, lang: Lang, notes: (string | null)[], template?: string) {
-  const tag = valueById(post.valueTag);
-  const note = [post.private ? copy[lang].private : null, tag ? `# ${lang === "zh" ? tag.zh : tag.en}` : null, ...notes]
-    .filter(Boolean)
-    .join("  ·  ");
+function card(n: Notice) {
+  const c = copy[n.lang];
+  // DMs end with the site (or, on the sender's Peer Bonus receipt, the allowance left); the
+  // group broadcast doesn't.
+  const tail = n.role === "broadcast" ? null : (n.remaining ?? site());
+  const note = [...n.details, tail].filter(Boolean).join("  ·  ");
   return {
     config: { wide_screen_mode: true },
     header: {
-      template: template ?? (post.kind === "bonus" ? "orange" : "carmine"),
-      title: { tag: "plain_text", content: title },
+      template: n.role === "cc" ? "wathet" : n.post.kind === "bonus" ? "orange" : "carmine",
+      title: { tag: "plain_text", content: n.title },
     },
     elements: [
-      { tag: "div", text: { tag: "plain_text", content: `“${post.message}”` } },
+      { tag: "div", text: { tag: "plain_text", content: `“${n.post.message}”` } },
       ...(note ? [{ tag: "note", elements: [{ tag: "plain_text", content: note }] }] : []),
-      {
-        tag: "action",
-        actions: [
-          { tag: "button", type: "primary", text: { tag: "plain_text", content: copy[lang].open }, url: `${config.publicUrl}/k/${post.id}` },
-        ],
-      },
+      { tag: "action", actions: [{ tag: "button", type: "primary", text: { tag: "plain_text", content: c.open }, url: n.url }] },
     ],
   };
 }
@@ -397,59 +344,12 @@ async function send(receiveIdType: "open_id" | "chat_id", receiveId: string, con
   });
 }
 
-// Recipients get "X thanked you", CC'd colleagues get "X thanked Y · cc'd to you",
-// the sender gets a receipt "you thanked Y" (and nothing else, even when they thanked or CC'd
-// themselves); public posts can also be broadcast to a group.
-export async function notifyPost(post: NotifyPost, senderRemaining?: number) {
-  if (!larkNotifyEnabled()) return;
-  const { senderId, recipientIds, ccIds } = post;
-  const people = await db.all<{ id: number; name: string; en_name: string | null; open_id: string | null; lang: string | null }>(
-    "SELECT id, name, en_name, open_id, lang FROM users WHERE id IN (SELECT value FROM json_each($ids))",
-    { ids: JSON.stringify([senderId, ...recipientIds, ...ccIds]) },
-  );
-  const byId = new Map(people.map((p) => [p.id, p]));
-  const sender = byId.get(senderId);
-  if (!sender) return;
-  const langOf = (p: { lang: string | null }): Lang => (p.lang === "en" ? "en" : "zh");
-  const nameIn = (p: { name: string; en_name: string | null }, lang: Lang) => (lang === "en" && p.en_name) || p.name;
-  const list = (ids: number[], lang: Lang) => {
-    const c = copy[lang];
-    const all = ids.map((id) => byId.get(id)).map((p) => (p ? nameIn(p, lang) : "?"));
-    return all.length <= 3 ? all.join(c.sep) : all.slice(0, 3).join(c.sep) + c.andMore(all.length);
-  };
-  const ccNote = (lang: Lang) => (ccIds.length ? copy[lang].ccNote(list(ccIds, lang)) : null);
-  const site = `夸夸 · ${new URL(config.publicUrl).host}`;
-  const bonus = post.kind === "bonus";
-  const jobs: Promise<unknown>[] = [];
-
-  for (const id of recipientIds) {
-    const r = byId.get(id);
-    if (!r?.open_id || id === senderId) continue;
-    const lang = langOf(r);
-    const c = copy[lang];
-    const title = bonus ? c.bonus(nameIn(sender, lang), post.points) : c.kudos(nameIn(sender, lang));
-    jobs.push(send("open_id", r.open_id, card(title, post, lang, [ccNote(lang), site])));
-  }
-  for (const id of ccIds) {
-    const r = byId.get(id);
-    if (!r?.open_id || id === senderId) continue;
-    const lang = langOf(r);
-    const c = copy[lang];
-    const title = bonus ? c.ccBonus(nameIn(sender, lang), list(recipientIds, lang)) : c.ccKudos(nameIn(sender, lang), list(recipientIds, lang));
-    jobs.push(send("open_id", r.open_id, card(title, post, lang, [site], "wathet")));
-  }
-  if (sender.open_id) {
-    const lang = langOf(sender);
-    const c = copy[lang];
-    const title = bonus ? c.sentBonus(list(recipientIds, lang), post.points, recipientIds.length > 1) : c.sentKudos(list(recipientIds, lang));
-    const remaining = bonus && senderRemaining !== undefined ? c.remaining(senderRemaining) : null;
-    jobs.push(send("open_id", sender.open_id, card(title, post, lang, [ccNote(lang), remaining ?? site])));
-  }
-  if (config.lark.broadcastChatId && !post.private) {
-    const c = copy.zh;
-    const title = bonus ? c.broadcastBonus(sender.name, list(recipientIds, "zh"), post.points) : c.broadcastKudos(sender.name, list(recipientIds, "zh"));
-    jobs.push(send("chat_id", config.lark.broadcastChatId, card(title, post, "zh", [ccNote("zh")])));
-  }
+// One card per notice: DMs by open_id, the broadcast to LARK_BROADCAST_CHAT_ID if set.
+export async function sendLarkNotices(notices: Notice[]) {
+  const jobs = notices.flatMap((n) => {
+    if (n.role === "broadcast") return config.lark.broadcastChatId ? [send("chat_id", config.lark.broadcastChatId, card(n))] : [];
+    return n.person?.open_id ? [send("open_id", n.person.open_id, card(n))] : [];
+  });
   for (const r of await Promise.allSettled(jobs)) {
     if (r.status === "rejected") log("notify failed:", (r.reason as Error).message);
   }

@@ -8,7 +8,7 @@
 
 export type Setting = {
   key: string;
-  group: "site" | "access" | "directory" | "lark" | "app" | "cloudflare";
+  group: "site" | "access" | "directory" | "lark" | "notify" | "app" | "cloudflare";
   /** "worker": passed to the Worker. "deploy": only used by the deploy scripts. */
   scope: "worker" | "deploy";
   /** Value used when the key is absent (as written in .env). */
@@ -33,6 +33,8 @@ export const directorySourceOf = (env: Record<string, string | undefined>) =>
   (env.DIRECTORY_SOURCE || (env.LARK_APP_ID ? "lark" : "roster")).toLowerCase();
 const isLark = (env: Record<string, string | undefined>) => directorySourceOf(env) === "lark";
 const isRoster = (env: Record<string, string | undefined>) => directorySourceOf(env) === "roster";
+const emailOn = (env: Record<string, string | undefined>) => env.EMAIL_NOTIFY === "1";
+const isEmail = (v: string) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? null : "expected an email address");
 
 const emailList = (v: string) =>
   v
@@ -176,6 +178,35 @@ export const SETTINGS: Setting[] = [
     default: "",
     when: isLark,
     help: "Optional Lark group chat ID that also gets every public thanks.",
+  },
+
+  // ---- notify
+  {
+    key: "EMAIL_NOTIFY",
+    group: "notify",
+    scope: "worker",
+    default: "0",
+    help: "1 = email the people thanked and CC'd (works with either directory). Sent through Cloudflare Email Service from EMAIL_FROM, whose domain must be onboarded to Email Sending (see AGENTS.md). 0 = off.",
+    check: (v) => (v === "0" || v === "1" ? null : "expected 0 or 1"),
+  },
+  {
+    key: "EMAIL_FROM",
+    group: "notify",
+    scope: "worker",
+    default: "",
+    example: "kudos@example.com",
+    required: emailOn,
+    when: emailOn,
+    help: "Sender address for notification emails, e.g. kudos@example.com. Its domain must be onboarded to Cloudflare Email Sending (see AGENTS.md); replies go to the person who sent the thanks.",
+    check: isEmail,
+  },
+  {
+    key: "EMAIL_FROM_NAME",
+    group: "notify",
+    scope: "worker",
+    default: "夸夸",
+    when: emailOn,
+    help: "Sender name shown in notification emails.",
   },
 
   // ---- app

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownTrayIcon, ArrowPathIcon, ChevronRightIcon, TrophyIcon, UserGroupIcon } from "@heroicons/react/24/outline";
+import { ArrowDownTrayIcon, ArrowPathIcon, ChevronRightIcon, EnvelopeIcon, TrophyIcon, UserGroupIcon } from "@heroicons/react/24/outline";
 import { api, type Users } from "../api";
 import { Avatar, Empty, Spinner, UserName } from "../components/ui";
 import { errorText, relativeTime } from "../i18n";
@@ -26,6 +26,7 @@ type Status = {
   source: "lark" | "roster";
   configured: boolean;
   periods: string[];
+  notify: { lark: boolean; larkBroadcast: boolean; email: boolean; emailFrom: string | null };
 };
 type Report = { period: string; rows: { userId: number; count: number; points: number; email: string | null }[]; users: Users };
 
@@ -140,6 +141,8 @@ export function Admin() {
           )}
         </section>
 
+        {s && <NotifyCard notify={s.notify} source={s.source} />}
+
         <section className="side-card">
           <div className="side-head">
             <h3>{t("admin.report")}</h3>
@@ -186,5 +189,57 @@ export function Admin() {
         </section>
       </div>
     </div>
+  );
+}
+
+function NotifyCard({ notify, source }: { notify: Status["notify"]; source: Status["source"] }) {
+  const { t, toast } = useApp();
+  const [sending, setSending] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const state = (on: boolean, extra?: string | null) => (on ? `${t("admin.on")}${extra ? ` · ${extra}` : ""}` : t("admin.off"));
+
+  async function testEmail() {
+    setSending(true);
+    setFailure(null);
+    try {
+      const r = await api<{ ok: boolean; to: string; error?: string }>("/api/admin/test-email", { method: "POST", body: {} });
+      if (r.ok) toast(t("admin.testEmailSent", { to: r.to }));
+      else setFailure(r.error ?? "");
+    } catch (e) {
+      toast(errorText(t, (e as { code: string }).code), "error");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <section className="side-card">
+      <div className="side-head">
+        <h3>{t("admin.notify")}</h3>
+        {notify.email && (
+          <button type="button" className="btn soft sm" disabled={sending} onClick={testEmail}>
+            <EnvelopeIcon className="ic" /> {t("admin.testEmail")}
+          </button>
+        )}
+      </div>
+      <dl className="kv">
+        {source === "lark" && (
+          <>
+            <dt>{t("admin.notifyLark")}</dt>
+            <dd>{state(notify.lark)}</dd>
+            <dt>{t("admin.notifyLarkGroup")}</dt>
+            <dd>{state(notify.larkBroadcast)}</dd>
+          </>
+        )}
+        <dt>{t("admin.notifyEmail")}</dt>
+        <dd>{state(notify.email, notify.emailFrom)}</dd>
+        {failure !== null && (
+          <>
+            <dt>{t("admin.testEmailFailed")}</dt>
+            <dd className="form-error mono">{failure}</dd>
+          </>
+        )}
+      </dl>
+    </section>
   );
 }

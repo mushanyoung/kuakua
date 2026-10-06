@@ -60,6 +60,12 @@ export const config = {
 
   directory: { source: directorySource as DirectorySource },
 
+  email: {
+    notify: get("EMAIL_NOTIFY") === "1",
+    from: get("EMAIL_FROM"),
+    fromName: get("EMAIL_FROM_NAME"),
+  },
+
   lark: {
     appId: get("LARK_APP_ID"),
     appSecret: get("LARK_APP_SECRET"),
@@ -84,6 +90,12 @@ export const larkEnabled = () => Boolean(config.lark.appId && config.lark.appSec
 
 // Lark DMs go to people by their Lark open_id, which only the Lark directory sync knows.
 export const larkNotifyEnabled = () => larkEnabled() && config.lark.notify && config.directory.source === "lark";
+
+// The EMAIL binding (send_email) is only in the Worker's config when EMAIL_NOTIFY=1.
+export const emailNotifyEnabled = () => config.email.notify && Boolean(config.email.from) && "EMAIL" in env;
+
+// Channels that reach people one to one, for the "they'll be notified" hints in the UI.
+export const notifyChannels = () => [...(larkNotifyEnabled() ? ["lark"] : []), ...(emailNotifyEnabled() ? ["email"] : [])];
 
 // Domain-level check; store.canSignIn() also admits everyone in the directory.
 export function isAllowedEmail(email: string) {

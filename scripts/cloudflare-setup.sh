@@ -13,6 +13,9 @@
 # reports it, and with --replace-dns deletes it — the old site is offline from then until
 # scripts/deploy.sh finishes.
 #
+# With EMAIL_NOTIFY=1 it also checks that EMAIL_FROM's domain is onboarded to Cloudflare Email
+# Sending, and onboards it with --enable-email (that adds DNS records; see below).
+#
 # Settings come from .env.production; credentials from the file named by CLOUDFLARE_ENV_FILE
 # (default .env.cloudflare, never committed): CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
 # Token permissions: see AGENTS.md.
@@ -20,7 +23,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 REPLACE_DNS=0
-[[ "${1:-}" == "--replace-dns" ]] && REPLACE_DNS=1
+ENABLE_EMAIL=0
+for arg in "$@"; do
+  case "$arg" in
+    --replace-dns) REPLACE_DNS=1 ;;
+    --enable-email) ENABLE_EMAIL=1 ;;
+    *) echo "unknown option $arg (expected --replace-dns, --enable-email)" >&2; exit 1 ;;
+  esac
+done
 
 conf() { bun scripts/config.ts get "$1" --raw; }
 for tool in curl jq bun; do command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 1; }; done
@@ -147,6 +157,30 @@ if [[ "$ours" == "0" ]]; then
       echo "dns: $HOST still has $(jq -c 'map("\(.type) \(.content)")' <<<"$records"); the Worker can't take it until that's" >&2
       echo "     removed. When you're ready to switch, re-run with --replace-dns, then scripts/deploy.sh." >&2
     fi
+  fi
+fi
+
+# Email: EMAIL_FROM's domain must be onboarded to Cloudflare Email Sending. That adds DNS records
+# (MX + SPF on cf-bounce.<domain>, DKIM at cf-bounce._domainkey.<domain>, DMARC at _dmarc.<domain>),
+# so it only happens with --enable-email.
+if [[ "$(conf EMAIL_NOTIFY)" == "1" ]]; then
+  MAIL_FROM="$(conf EMAIL_FROM)"
+  MAIL_DOMAIN="${MAIL_FROM#*@}"
+  if listing="$(bunx wrangler email sending list 2>&1)"; then
+    if grep -qF "$MAIL_DOMAIN" <<<"$listing"; then
+      echo "email: $MAIL_DOMAIN is onboarded to Email Sending" >&2
+    elif [[ "$ENABLE_EMAIL" == 1 ]]; then
+      bunx wrangler email sending enable "$MAIL_DOMAIN" >&2
+      echo "email: onboarded $MAIL_DOMAIN; DNS records:" >&2
+      bunx wrangler email sending dns get "$MAIL_DOMAIN" >&2 || true
+    else
+      echo "email: $MAIL_DOMAIN isn't onboarded to Email Sending yet. Onboarding adds MX + SPF on cf-bounce.$MAIL_DOMAIN," >&2
+      echo "       DKIM at cf-bounce._domainkey.$MAIL_DOMAIN and DMARC at _dmarc.$MAIL_DOMAIN (if one exists, keep just one)." >&2
+      echo "       Re-run with --enable-email, or use the dashboard: Email Service → Email Sending → Onboard Domain." >&2
+    fi
+  else
+    echo "email: can't list Email Sending domains with this token. Onboard $MAIL_DOMAIN in the dashboard" >&2
+    echo "       (Email Service → Email Sending → Onboard Domain), or give the token Email Sending edit access." >&2
   fi
 fi
 

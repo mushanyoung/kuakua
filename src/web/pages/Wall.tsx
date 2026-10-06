@@ -3,7 +3,7 @@ import { type Users } from "../api";
 import { Constellation, type GraphEdge } from "../components/Constellation";
 import { Feed } from "../components/Feed";
 import { Avatar, CountUp, UserName } from "../components/ui";
-import { shortDate } from "../i18n";
+import { channelsText, shortDate } from "../i18n";
 import { Link, navigate } from "../router";
 import { useApp, useApi } from "../state";
 
@@ -37,9 +37,9 @@ export function Wall() {
               {t("post.bonus")}
             </button>
           </div>
-          {me.config.lark && (
+          {me.config.notify.length > 0 && (
             <p className="hero-note">
-              <BellAlertIcon className="ic" /> {t("hero.notify")}
+              <BellAlertIcon className="ic" /> {t("hero.notify", { channels: channelsText(t, me.config.notify) })}
             </p>
           )}
           <dl className="stats">

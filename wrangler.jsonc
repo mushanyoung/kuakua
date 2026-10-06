@@ -14,6 +14,8 @@
   },
   "d1_databases": [{ "binding": "DB", "database_name": "kuakua", "database_id": "local-dev", "migrations_dir": "migrations" }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "kuakua-files" }],
+  // Simulated locally: wrangler dev logs each email instead of sending it.
+  "send_email": [{ "name": "EMAIL" }],
   "triggers": { "crons": ["0 19 * * *"] },
   "vars": {
     "ENVIRONMENT": "development",
@@ -32,6 +34,9 @@
     "LARK_BASE_URL": "https://open.larksuite.com",
     "LARK_NOTIFY": "1",
     "LARK_BROADCAST_CHAT_ID": "",
+    "EMAIL_NOTIFY": "1",
+    "EMAIL_FROM": "kudos@notify.example.com",
+    "EMAIL_FROM_NAME": "夸夸",
     "VALUES_JSON": ""
   },
   "observability": { "enabled": true }
