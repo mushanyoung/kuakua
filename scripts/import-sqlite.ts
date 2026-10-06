@@ -79,7 +79,14 @@ await Promise.all(
 writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
 console.log(`avatars: ${done} uploaded, ${files.length - done} unchanged (${avatarDir})`);
 
-// ---- rows → D1
+// ---- rows → D1 (creating the tables first on a fresh database)
+const migrate = Bun.spawnSync(["bunx", "wrangler", "d1", "migrations", "apply", dbName, ...target], {
+  cwd: ROOT,
+  stdout: "inherit",
+  stderr: "inherit",
+  env: { ...process.env, CI: "1" },
+});
+if (migrate.exitCode !== 0) process.exit(1);
 const exec = Bun.spawnSync(["bunx", "wrangler", "d1", "execute", dbName, "--file", sqlFile, "--yes", ...target], {
   cwd: ROOT,
   stdout: "inherit",

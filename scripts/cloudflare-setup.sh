@@ -5,7 +5,8 @@
 #   3. R2 bucket <WORKER_NAME>-files        (avatars and the uploaded roster)
 #   4. an Access policy "kuakua: <hostname>" allowing ADMIN_EMAILS, ALLOWED_EMAIL_DOMAINS and,
 #      for DIRECTORY_SOURCE=roster, everyone in the roster (re-run after changing any of those)
-#   5. the Access app for <hostname> (created with that policy) and a public bypass for /healthz
+#   5. the Access app for <hostname> (created with that policy) and a public bypass for /healthz;
+#      an existing app that uses other policies is left as it is
 #   6. writes CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD and D1_DATABASE_ID into .env.production
 # The Worker and its Custom Domain are created by scripts/deploy.sh. A Custom Domain can't take
 # a hostname that still has a DNS record (e.g. the CNAME of an old tunnel setup): this script
@@ -83,36 +84,36 @@ else
   echo "r2: created $BUCKET${LOCATION:+ in $LOCATION}" >&2
 fi
 
-# 4. Access policy managed by this script
-include="$(bun scripts/config.ts access-include)"
-[[ "$(jq length <<<"$include")" -gt 0 ]] || { echo "Nobody would be allowed in: set ADMIN_EMAILS / ALLOWED_EMAIL_DOMAINS / a roster" >&2; exit 1; }
-policy_body="$(jq -n --arg n "$POLICY_NAME" --argjson inc "$include" '{name: $n, decision: "allow", include: $inc, session_duration: "24h"}')"
-policy_id="$(cf GET "$ACCT/access/policies?per_page=500" | jq -r --arg n "$POLICY_NAME" '[.result[] | select(.name == $n)][0].id // empty')"
-if [[ -n "$policy_id" ]]; then
-  cf PUT "$ACCT/access/policies/$policy_id" "$policy_body" >/dev/null
-  echo "access: updated policy \"$POLICY_NAME\" ($(jq length <<<"$include") rules)" >&2
-else
-  policy_id="$(cf POST "$ACCT/access/policies" "$policy_body" | jq -r .result.id)"
-  echo "access: created policy \"$POLICY_NAME\" ($(jq length <<<"$include") rules)" >&2
-fi
-
-# 5. Access app + public /healthz
+# 4 + 5. Access app for the hostname, guarded by a policy this script manages. An app that
+# already exists with other policies (set up by hand or by an older version) is left alone.
 apps="$(cf GET "$ACCT/access/apps?per_page=500")"
 app="$(jq -c --arg d "$HOST" '[.result[] | select(.domain == $d)][0] // empty' <<<"$apps")"
-if [[ -z "$app" ]]; then
-  idps="$(cf GET "$ACCT/access/identity_providers" | jq -c '[.result[].id]')"
-  [[ "$idps" != "[]" ]] || echo "access: warning — no login methods configured; add One-time PIN in Zero Trust → Settings → Authentication" >&2
-  body="$(jq -n --arg name "$APP_NAME" --arg d "$HOST" --argjson idps "$idps" --arg pid "$policy_id" '{
-    name: $name, type: "self_hosted", domain: $d, session_duration: "24h",
-    app_launcher_visible: true, allowed_idps: $idps, auto_redirect_to_identity: false,
-    policies: [{id: $pid, precedence: 1}]
-  }')"
-  app="$(cf POST "$ACCT/access/apps" "$body" | jq -c .result)"
-  echo "access: created app $(jq -r .id <<<"$app")" >&2
+policy_id="$(cf GET "$ACCT/access/policies?per_page=500" | jq -r --arg n "$POLICY_NAME" '[.result[] | select(.name == $n)][0].id // empty')"
+if [[ -n "$app" ]] && ! jq -e --arg pid "$policy_id" '$pid != "" and (.policies // [] | map(.id) | index($pid))' <<<"$app" >/dev/null; then
+  echo "access: app for $HOST exists ($(jq -r .id <<<"$app")) with its own policies ($(jq -r '[.policies[]?.name] | join(", ")' <<<"$app")); leaving them as they are" >&2
 else
-  echo "access: app for $HOST exists $(jq -r .id <<<"$app")" >&2
-  if ! jq -e --arg pid "$policy_id" '.policies // [] | map(.id) | index($pid)' <<<"$app" >/dev/null; then
-    echo "access: note — that app doesn't use \"$POLICY_NAME\"; its own policies decide who gets in." >&2
+  include="$(bun scripts/config.ts access-include)"
+  [[ "$(jq length <<<"$include")" -gt 0 ]] || { echo "Nobody would be allowed in: set ADMIN_EMAILS / ALLOWED_EMAIL_DOMAINS / a roster" >&2; exit 1; }
+  policy_body="$(jq -n --arg n "$POLICY_NAME" --argjson inc "$include" '{name: $n, decision: "allow", include: $inc, session_duration: "24h"}')"
+  if [[ -n "$policy_id" ]]; then
+    cf PUT "$ACCT/access/policies/$policy_id" "$policy_body" >/dev/null
+    echo "access: updated policy \"$POLICY_NAME\" ($(jq length <<<"$include") rules)" >&2
+  else
+    policy_id="$(cf POST "$ACCT/access/policies" "$policy_body" | jq -r .result.id)"
+    echo "access: created policy \"$POLICY_NAME\" ($(jq length <<<"$include") rules)" >&2
+  fi
+  if [[ -z "$app" ]]; then
+    idps="$(cf GET "$ACCT/access/identity_providers" | jq -c '[.result[].id]')"
+    [[ "$idps" != "[]" ]] || echo "access: warning — no login methods configured; add One-time PIN in Zero Trust → Settings → Authentication" >&2
+    body="$(jq -n --arg name "$APP_NAME" --arg d "$HOST" --argjson idps "$idps" --arg pid "$policy_id" '{
+      name: $name, type: "self_hosted", domain: $d, session_duration: "24h",
+      app_launcher_visible: true, allowed_idps: $idps, auto_redirect_to_identity: false,
+      policies: [{id: $pid, precedence: 1}]
+    }')"
+    app="$(cf POST "$ACCT/access/apps" "$body" | jq -c .result)"
+    echo "access: created app $(jq -r .id <<<"$app")" >&2
+  else
+    echo "access: app for $HOST exists $(jq -r .id <<<"$app")" >&2
   fi
 fi
 if ! jq -e --arg d "$HOST/healthz" '.result[] | select(.domain == $d)' <<<"$apps" >/dev/null; then
@@ -131,7 +132,11 @@ while [[ "$candidate" == *.* && -z "$zone" ]]; do
   candidate="${candidate#*.}"
 done
 [[ -n "$zone" ]] || { echo "No zone in this account covers $HOST" >&2; exit 1; }
-ours="$(cf GET "$ACCT/workers/domains?hostname=$HOST" | jq -r --arg s "$NAME" '[.result[] | select(.service == $s)] | length')"
+domains="$(curl -sS "$ACCT/workers/domains?hostname=$HOST" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+if [[ "$(jq -r .success <<<"$domains")" != "true" ]]; then
+  echo "workers: can't read Custom Domains ($(jq -c '[.errors[]?.message]' <<<"$domains")) — the token needs Account › Workers Scripts: Edit to deploy" >&2
+fi
+ours="$(jq -r --arg s "$NAME" '[.result[]? | select(.service == $s)] | length' <<<"$domains")"
 if [[ "$ours" == "0" ]]; then
   records="$(cf GET "$API/zones/$zone/dns_records?name=$HOST" | jq -c '[.result[] | {id, type, content}]')"
   if [[ "$(jq length <<<"$records")" -gt 0 ]]; then
