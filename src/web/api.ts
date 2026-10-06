@@ -25,6 +25,7 @@ export type Post = {
   valueTag: string | null;
   points: number;
   createdAt: number;
+  private: boolean;
   reactions: { emoji: string; userIds: number[] }[];
   commentCount: number;
   canDelete: boolean;

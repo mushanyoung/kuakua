@@ -95,6 +95,9 @@ const migrations = [
     PRIMARY KEY (post_id, user_id)
   );
   `,
+  `
+  ALTER TABLE posts ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 const current = (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;

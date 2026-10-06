@@ -94,10 +94,10 @@ const server = Bun.serve({
       PUT: api(async ({ req, viewer }) => store.setLang(viewer.id, String((await body(req)).lang))),
     },
 
-    "/api/users": { GET: api(() => store.listUsers()) },
+    "/api/users": { GET: api(({ viewer }) => store.listUsers(viewer)) },
     "/api/users/:id": {
       GET: api<"/api/users/:id">(({ req, viewer }) =>
-        store.profile(req.params.id === "me" ? viewer.id : (intParam(req.params.id) ?? 0)),
+        store.profile(req.params.id === "me" ? viewer.id : (intParam(req.params.id) ?? 0), viewer),
       ),
     },
 

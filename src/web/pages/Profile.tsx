@@ -46,6 +46,9 @@ export function ProfilePage({ id }: { id: string }) {
             {isMe ? (
               <>
                 <span className="you-tag">{t("profile.you")}</span>
+                <button type="button" className="btn soft sm" onClick={() => openComposer({ recipientIds: [u.id] })}>
+                  {t("profile.thankSelf")}
+                </button>
                 {me.isAdmin && (
                   <Link to="/admin" className="btn soft sm">
                     {t("nav.admin")}

@@ -323,6 +323,7 @@ type NotifyPost = {
   senderId: number;
   recipientIds: number[];
   ccIds: number[];
+  private: boolean;
 };
 
 const copy = {
@@ -338,6 +339,7 @@ const copy = {
     ccBonus: (s: string, r: string) => `${s} 给 ${r} 发了 Peer Bonus · 抄送给你`,
     ccNote: (names: string) => `抄送：${names}`,
     remaining: (n: number) => `本月剩余 ${n} 积分`,
+    private: "🔒 秘密夸夸 · 仅相关的人可见",
     andMore: (n: number) => `等 ${n} 人`,
     sep: "、",
   },
@@ -353,6 +355,7 @@ const copy = {
     ccBonus: (s: string, r: string) => `${s} sent ${r} a Peer Bonus · cc'd to you`,
     ccNote: (names: string) => `CC: ${names}`,
     remaining: (n: number) => `${n} pts left this month`,
+    private: "🔒 Private · only the people on it can see it",
     andMore: (n: number) => ` and ${n} others`,
     sep: ", ",
   },
@@ -362,7 +365,9 @@ type Lang = keyof typeof copy;
 
 function card(title: string, post: NotifyPost, lang: Lang, notes: (string | null)[], template?: string) {
   const tag = valueById(post.valueTag);
-  const note = [tag ? `# ${lang === "zh" ? tag.zh : tag.en}` : null, ...notes].filter(Boolean).join("  ·  ");
+  const note = [post.private ? copy[lang].private : null, tag ? `# ${lang === "zh" ? tag.zh : tag.en}` : null, ...notes]
+    .filter(Boolean)
+    .join("  ·  ");
   return {
     config: { wide_screen_mode: true },
     header: {
@@ -391,7 +396,8 @@ async function send(receiveIdType: "open_id" | "chat_id", receiveId: string, con
 }
 
 // Recipients get "X thanked you", CC'd colleagues get "X thanked Y · cc'd to you",
-// the sender gets a receipt "you thanked Y"; optionally everything is broadcast to a group.
+// the sender gets a receipt "you thanked Y" (and nothing else, even when they thanked or CC'd
+// themselves); public posts can also be broadcast to a group.
 export async function notifyPost(post: NotifyPost, senderRemaining?: number) {
   if (!larkEnabled() || !config.lark.notify) return;
   const { senderId, recipientIds, ccIds } = post;
@@ -421,7 +427,7 @@ export async function notifyPost(post: NotifyPost, senderRemaining?: number) {
 
   for (const id of recipientIds) {
     const r = byId.get(id);
-    if (!r?.open_id) continue;
+    if (!r?.open_id || id === senderId) continue;
     const lang = langOf(r);
     const c = copy[lang];
     const title = bonus ? c.bonus(nameIn(sender, lang), post.points) : c.kudos(nameIn(sender, lang));
@@ -429,7 +435,7 @@ export async function notifyPost(post: NotifyPost, senderRemaining?: number) {
   }
   for (const id of ccIds) {
     const r = byId.get(id);
-    if (!r?.open_id) continue;
+    if (!r?.open_id || id === senderId) continue;
     const lang = langOf(r);
     const c = copy[lang];
     const title = bonus ? c.ccBonus(nameIn(sender, lang), list(recipientIds, lang)) : c.ccKudos(nameIn(sender, lang), list(recipientIds, lang));
@@ -442,7 +448,7 @@ export async function notifyPost(post: NotifyPost, senderRemaining?: number) {
     const remaining = bonus && senderRemaining !== undefined ? c.remaining(senderRemaining) : null;
     jobs.push(send("open_id", sender.open_id, card(title, post, lang, [ccNote(lang), remaining ?? site])));
   }
-  if (config.lark.broadcastChatId) {
+  if (config.lark.broadcastChatId && !post.private) {
     const c = copy.zh;
     const title = bonus ? c.broadcastBonus(sender.name, list(recipientIds, "zh"), post.points) : c.broadcastKudos(sender.name, list(recipientIds, "zh"));
     jobs.push(send("chat_id", config.lark.broadcastChatId, card(title, post, "zh", [ccNote("zh")])));

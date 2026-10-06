@@ -117,15 +117,15 @@ export function setLang(userId: number, lang: string) {
 
 // ---------------------------------------------------------------- directory
 
-export function listUsers() {
+export function listUsers(viewer: Viewer) {
   const rows = db.query(`${USER_SELECT} WHERE u.active = 1 ORDER BY u.name COLLATE NOCASE`).all() as UserRow[];
   const counts: Record<number, number> = {};
   const received = db
     .query(
       `SELECT r.user_id AS id, COUNT(*) AS n FROM post_recipients r
-       JOIN posts p ON p.id = r.post_id AND p.deleted_at IS NULL GROUP BY r.user_id`,
+       JOIN posts p ON p.id = r.post_id AND p.deleted_at IS NULL WHERE ${visibleTo("p")} GROUP BY r.user_id`,
     )
-    .all() as { id: number; n: number }[];
+    .all({ viewer: viewer.id }) as { id: number; n: number }[];
   for (const r of received) counts[r.id] = r.n;
   const departments = db
     .query(
@@ -155,6 +155,14 @@ export function allowance(userId: number, period = periodOf()) {
 
 // ---------------------------------------------------------------- posts
 
+// A private post is only visible to the people on it: the sender, recipients and CC.
+// Binds $viewer.
+function visibleTo(p: string) {
+  return `(${p}.private = 0 OR ${p}.sender_id = $viewer
+    OR EXISTS (SELECT 1 FROM post_recipients vr WHERE vr.post_id = ${p}.id AND vr.user_id = $viewer)
+    OR EXISTS (SELECT 1 FROM post_cc vc WHERE vc.post_id = ${p}.id AND vc.user_id = $viewer))`;
+}
+
 type PostRow = {
   id: number;
   kind: "kudos" | "bonus";
@@ -164,6 +172,7 @@ type PostRow = {
   points: number;
   period: string;
   created_at: number;
+  private: number;
 };
 
 export type PostDTO = {
@@ -176,6 +185,7 @@ export type PostDTO = {
   valueTag: string | null;
   points: number;
   createdAt: number;
+  private: boolean;
   reactions: { emoji: string; userIds: number[] }[];
   commentCount: number;
   canDelete: boolean;
@@ -220,6 +230,7 @@ function hydrate(rows: PostRow[], viewer: Viewer) {
       valueTag: r.value_tag,
       points: r.points,
       createdAt: r.created_at,
+      private: r.private === 1,
       reactions: [],
       commentCount: 0,
       canDelete: canDeletePost(r, viewer),
@@ -258,8 +269,8 @@ export type FeedQuery = {
 };
 
 export function feed(q: FeedQuery, viewer: Viewer) {
-  const where = ["p.deleted_at IS NULL"];
-  const params: Record<string, string | number> = {};
+  const where = ["p.deleted_at IS NULL", visibleTo("p")];
+  const params: Record<string, string | number> = { viewer: viewer.id };
   if (q.cursor) (where.push("p.id < $cursor"), (params.cursor = q.cursor));
   if (q.after) (where.push("p.id > $after"), (params.after = q.after));
   if (q.kind === "kudos" || q.kind === "bonus") (where.push("p.kind = $kind"), (params.kind = q.kind));
@@ -280,16 +291,17 @@ export function feed(q: FeedQuery, viewer: Viewer) {
   return { ...hydrate(page, viewer), nextCursor: rows.length > limit ? page[page.length - 1]!.id : null };
 }
 
-const qPost = db.query("SELECT * FROM posts WHERE id = $id AND deleted_at IS NULL");
+const qPost = db.query(`SELECT p.* FROM posts p WHERE p.id = $id AND p.deleted_at IS NULL AND ${visibleTo("p")}`);
 
-function livePost(id: number) {
-  const p = qPost.get({ id }) as PostRow | null;
+// Someone else's private post is indistinguishable from a missing one.
+function livePost(id: number, viewer: Viewer) {
+  const p = qPost.get({ id, viewer: viewer.id }) as PostRow | null;
   if (!p) throw new HttpError(404, "post_not_found");
   return p;
 }
 
 export function postDetail(id: number, viewer: Viewer) {
-  const { posts, users } = hydrate([livePost(id)], viewer);
+  const { posts, users } = hydrate([livePost(id, viewer)], viewer);
   const comments = db
     .query(
       `SELECT id, user_id AS userId, body, created_at AS createdAt FROM comments
@@ -310,6 +322,7 @@ export type NewPost = {
   ccIds?: unknown;
   message: unknown;
   valueTag?: unknown;
+  private?: unknown;
 };
 
 export function createPost(input: NewPost, viewer: Viewer) {
@@ -324,19 +337,19 @@ export function createPost(input: NewPost, viewer: Viewer) {
   const ids = Array.isArray(input.recipientIds) ? [...new Set(input.recipientIds.map(Number))] : [];
   if (!ids.length || ids.some((n) => !Number.isInteger(n))) throw new HttpError(400, "recipients_required");
   if (ids.length > LIMITS.recipientsMax) throw new HttpError(400, "too_many_recipients");
-  if (ids.includes(viewer.id)) throw new HttpError(400, "no_self_thanks");
+  // Kudos to yourself is fine; points to yourself are not.
+  if (kind === "bonus" && ids.includes(viewer.id)) throw new HttpError(400, "no_self_bonus");
   const found = usersByIds(ids);
   if (ids.some((id) => !found[id]?.active)) throw new HttpError(400, "recipient_not_found");
 
-  // CC'd people are only notified; anyone already a recipient (or the sender) is dropped.
-  const ccIds = Array.isArray(input.ccIds)
-    ? [...new Set(input.ccIds.map(Number))].filter((n) => n !== viewer.id && !ids.includes(n))
-    : [];
+  // CC'd people are only notified; anyone already a recipient is dropped. The sender may CC themselves.
+  const ccIds = Array.isArray(input.ccIds) ? [...new Set(input.ccIds.map(Number))].filter((n) => !ids.includes(n)) : [];
   if (ccIds.some((n) => !Number.isInteger(n))) throw new HttpError(400, "cc_not_found");
   if (ccIds.length > LIMITS.ccMax) throw new HttpError(400, "too_many_cc");
   const ccFound = usersByIds(ccIds);
   if (ccIds.some((id) => !ccFound[id]?.active)) throw new HttpError(400, "cc_not_found");
 
+  const isPrivate = input.private === true;
   const points = kind === "bonus" ? config.bonus.points : 0;
   const cost = points * ids.length;
   const now = Date.now();
@@ -346,10 +359,10 @@ export function createPost(input: NewPost, viewer: Viewer) {
     if (cost > 0 && allowance(viewer.id, period).remaining < cost) throw new HttpError(409, "insufficient_allowance");
     const res = db
       .query(
-        `INSERT INTO posts (kind, sender_id, message, value_tag, points, cost, period, created_at)
-         VALUES ($kind, $sender, $message, $tag, $points, $cost, $period, $now)`,
+        `INSERT INTO posts (kind, sender_id, message, value_tag, points, cost, period, created_at, private)
+         VALUES ($kind, $sender, $message, $tag, $points, $cost, $period, $now, $private)`,
       )
-      .run({ kind, sender: viewer.id, message, tag: valueTag, points, cost, period, now });
+      .run({ kind, sender: viewer.id, message, tag: valueTag, points, cost, period, now, private: isPrivate ? 1 : 0 });
     const postId = Number(res.lastInsertRowid);
     const ins = db.query("INSERT INTO post_recipients (post_id, user_id) VALUES ($post, $user)");
     for (const u of ids) ins.run({ post: postId, user: u });
@@ -361,14 +374,14 @@ export function createPost(input: NewPost, viewer: Viewer) {
 }
 
 export function deletePost(id: number, viewer: Viewer) {
-  const p = livePost(id);
+  const p = livePost(id, viewer);
   if (!canDeletePost(p, viewer)) throw new HttpError(403, "forbidden");
   db.query("UPDATE posts SET deleted_at = $now, deleted_by = $by WHERE id = $id").run({ now: Date.now(), by: viewer.id, id });
 }
 
 export function toggleReaction(postId: number, emoji: unknown, viewer: Viewer) {
   if (typeof emoji !== "string" || !REACTIONS.includes(emoji as never)) throw new HttpError(400, "bad_emoji");
-  livePost(postId);
+  livePost(postId, viewer);
   const params = { post: postId, user: viewer.id, emoji };
   const del = db.query("DELETE FROM reactions WHERE post_id = $post AND user_id = $user AND emoji = $emoji").run(params);
   if (del.changes === 0) {
@@ -377,14 +390,14 @@ export function toggleReaction(postId: number, emoji: unknown, viewer: Viewer) {
       now: Date.now(),
     });
   }
-  return hydrate([livePost(postId)], viewer);
+  return hydrate([livePost(postId, viewer)], viewer);
 }
 
 export function addComment(postId: number, body: unknown, viewer: Viewer) {
   const text = typeof body === "string" ? body.trim() : "";
   if (!text) throw new HttpError(400, "comment_required");
   if (text.length > LIMITS.commentMax) throw new HttpError(400, "comment_too_long");
-  livePost(postId);
+  livePost(postId, viewer);
   db.query("INSERT INTO comments (post_id, user_id, body, created_at) VALUES ($post, $user, $body, $now)").run({
     post: postId,
     user: viewer.id,
@@ -399,6 +412,7 @@ export function deleteComment(commentId: number, viewer: Viewer) {
     | { post_id: number; user_id: number }
     | null;
   if (!c) throw new HttpError(404, "comment_not_found");
+  livePost(c.post_id, viewer);
   if (!viewer.isAdmin && c.user_id !== viewer.id) throw new HttpError(403, "forbidden");
   db.query("UPDATE comments SET deleted_at = $now WHERE id = $id").run({ now: Date.now(), id: commentId });
   return postDetail(c.post_id, viewer);
@@ -408,6 +422,7 @@ export function deleteComment(commentId: number, viewer: Viewer) {
 
 export const RANGES: Range[] = ["month", "quarter", "year", "all"];
 
+// Admin-only totals, so private posts count; thanking yourself doesn't.
 export function leaderboard(range: Range, type: "received" | "given") {
   const since = rangeStart(range);
   const rows =
@@ -418,7 +433,7 @@ export function leaderboard(range: Range, type: "received" | "given") {
                     COUNT(DISTINCT p.sender_id) AS people
              FROM post_recipients r JOIN posts p ON p.id = r.post_id
              JOIN users u ON u.id = r.user_id AND u.active = 1
-             WHERE p.deleted_at IS NULL AND p.created_at >= $since
+             WHERE p.deleted_at IS NULL AND p.created_at >= $since AND r.user_id <> p.sender_id
              GROUP BY r.user_id ORDER BY count DESC, points DESC, MAX(p.created_at) ASC LIMIT 50`,
           )
           .all({ since })
@@ -426,9 +441,11 @@ export function leaderboard(range: Range, type: "received" | "given") {
           .query(
             `SELECT p.sender_id AS userId, COUNT(*) AS count, SUM(p.cost) AS points,
                     (SELECT COUNT(DISTINCT r.user_id) FROM post_recipients r JOIN posts p2 ON p2.id = r.post_id
-                     WHERE p2.sender_id = p.sender_id AND p2.deleted_at IS NULL AND p2.created_at >= $since) AS people
+                     WHERE p2.sender_id = p.sender_id AND p2.deleted_at IS NULL AND p2.created_at >= $since
+                       AND r.user_id <> p2.sender_id) AS people
              FROM posts p JOIN users u ON u.id = p.sender_id AND u.active = 1
              WHERE p.deleted_at IS NULL AND p.created_at >= $since
+               AND EXISTS (SELECT 1 FROM post_recipients r WHERE r.post_id = p.id AND r.user_id <> p.sender_id)
              GROUP BY p.sender_id ORDER BY count DESC, people DESC, MAX(p.created_at) ASC LIMIT 50`,
           )
           .all({ since });
@@ -454,12 +471,13 @@ export function overview() {
     .get({ since }) as { people: number };
   const { total } = db.query("SELECT COUNT(*) AS total FROM posts WHERE deleted_at IS NULL").get() as { total: number };
 
-  // The hero constellation: who thanked whom, most recent first.
+  // The hero constellation: who thanked whom, most recent first. Everyone sees the same graph,
+  // so private posts stay out of it (the totals above are anonymous and include them).
   const edges = db
     .query(
       `SELECT p.id, p.sender_id AS source, r.user_id AS target, p.kind, p.created_at AS at
        FROM posts p JOIN post_recipients r ON r.post_id = p.id
-       WHERE p.deleted_at IS NULL ORDER BY p.id DESC LIMIT 90`,
+       WHERE p.deleted_at IS NULL AND p.private = 0 AND r.user_id <> p.sender_id ORDER BY p.id DESC LIMIT 90`,
     )
     .all() as { id: number; source: number; target: number; kind: string; at: number }[];
   const nodeIds = new Set<number>();
@@ -478,36 +496,39 @@ export function overview() {
   };
 }
 
-export function profile(userId: number) {
+// Counted over the posts the viewer can see, so the numbers match the feeds below them.
+export function profile(userId: number, viewer: Viewer) {
   const row = userRowById(userId);
   if (!row) throw new HttpError(404, "user_not_found");
+  const params = { id: userId, viewer: viewer.id };
   const received = db
     .query(
-      `SELECT COUNT(*) AS count, COALESCE(SUM(p.points), 0) AS points, COUNT(DISTINCT p.sender_id) AS people
+      `SELECT COUNT(*) AS count, COALESCE(SUM(p.points), 0) AS points,
+              COUNT(DISTINCT CASE WHEN p.sender_id <> r.user_id THEN p.sender_id END) AS people
        FROM post_recipients r JOIN posts p ON p.id = r.post_id
-       WHERE r.user_id = $id AND p.deleted_at IS NULL`,
+       WHERE r.user_id = $id AND p.deleted_at IS NULL AND ${visibleTo("p")}`,
     )
-    .get({ id: userId });
+    .get(params);
   const sent = db
     .query(
-      `SELECT COUNT(*) AS count, COALESCE(SUM(cost), 0) AS points FROM posts
-       WHERE sender_id = $id AND deleted_at IS NULL`,
+      `SELECT COUNT(*) AS count, COALESCE(SUM(p.cost), 0) AS points FROM posts p
+       WHERE p.sender_id = $id AND p.deleted_at IS NULL AND ${visibleTo("p")}`,
     )
-    .get({ id: userId });
+    .get(params);
   const values = db
     .query(
       `SELECT p.value_tag AS tag, COUNT(*) AS count FROM post_recipients r JOIN posts p ON p.id = r.post_id
-       WHERE r.user_id = $id AND p.deleted_at IS NULL AND p.value_tag IS NOT NULL
+       WHERE r.user_id = $id AND p.deleted_at IS NULL AND p.value_tag IS NOT NULL AND ${visibleTo("p")}
        GROUP BY p.value_tag ORDER BY count DESC`,
     )
-    .all({ id: userId });
+    .all(params);
   const supporters = db
     .query(
       `SELECT p.sender_id AS userId, COUNT(*) AS count FROM post_recipients r JOIN posts p ON p.id = r.post_id
-       WHERE r.user_id = $id AND p.deleted_at IS NULL
+       WHERE r.user_id = $id AND p.deleted_at IS NULL AND p.sender_id <> $id AND ${visibleTo("p")}
        GROUP BY p.sender_id ORDER BY count DESC, MAX(p.created_at) DESC LIMIT 8`,
     )
-    .all({ id: userId }) as { userId: number; count: number }[];
+    .all(params) as { userId: number; count: number }[];
   const users = usersByIds([userId, ...supporters.map((s) => s.userId)]);
   return { user: users[userId]!, stats: { received, sent }, values, supporters, users };
 }

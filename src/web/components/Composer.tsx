@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from "react";
 import confetti from "canvas-confetti";
 import { ChatBubbleLeftRightIcon, GiftIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { BellAlertIcon } from "@heroicons/react/20/solid";
+import { BellAlertIcon, LockClosedIcon } from "@heroicons/react/20/solid";
 import { altName, api, type PostDetail, type Allowance, type User } from "../api";
 import { errorText } from "../i18n";
 import { useApp, type ComposerPrefill } from "../state";
@@ -34,8 +34,9 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   const allowance = me.allowance;
   const points = me.config.bonusPoints;
   const [kind, setKind] = useState<"kudos" | "bonus">(prefill?.kind ?? "kudos");
-  const [recipientIds, setRecipientIds] = useState<number[]>(prefill?.recipientIds?.filter((id) => id !== me.user.id) ?? []);
+  const [recipientIds, setRecipientIds] = useState<number[]>(prefill?.recipientIds ?? []);
   const [ccIds, setCcIds] = useState<number[]>([]);
+  const [isPrivate, setIsPrivate] = useState(false);
   const [valueTag, setValueTag] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,6 +57,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   }, []);
 
   const suggestTo = (pool: User[]) => {
+    pool = pool.filter((u) => u.id !== me.user.id);
     const mine = pool.filter((u) => u.dept && u.dept === me.user.dept);
     return [...mine, ...pool.filter((u) => !mine.includes(u))].slice(0, 6).map((user) => ({ user }));
   };
@@ -69,6 +71,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
     };
     for (const id of recipientIds) push(users[id]?.leaderId, t("composer.theirManager"));
     push(me.user.leaderId, t("composer.myManager"));
+    push(me.user.id, t("composer.me"));
     for (const u of suggestTo(pool)) push(u.user.id);
     return out.slice(0, 6);
   };
@@ -78,7 +81,8 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   const cost = kind === "bonus" ? points * Math.max(1, n) : 0;
   const tooExpensive = kind === "bonus" && cost > allowance.remaining;
   const tooShort = kind === "bonus" && message.trim().length < LIMITS.messageMinBonus;
-  const canSend = n > 0 && message.trim().length > 0 && !tooExpensive && !tooShort && !busy;
+  const selfBonus = kind === "bonus" && recipientIds.includes(me.user.id);
+  const canSend = n > 0 && message.trim().length > 0 && !tooExpensive && !tooShort && !selfBonus && !busy;
 
 
   function insertIdea(text: string) {
@@ -97,6 +101,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
     if (!canSend) {
       if (!n) setError(t("err.recipients_required"));
       else if (!message.trim()) setError(t("err.message_required"));
+      else if (selfBonus) setError(t("err.no_self_bonus"));
       else if (tooShort) setError(t("composer.minBonus", { n: LIMITS.messageMinBonus }));
       return;
     }
@@ -105,7 +110,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
     try {
       const res = await api<PostDetail & { allowance: Allowance }>("/api/posts", {
         method: "POST",
-        body: { kind, recipientIds, ccIds, message, valueTag },
+        body: { kind, recipientIds, ccIds, message, valueTag, private: isPrivate },
       });
       mergeUsers(res.users);
       setMe({ ...me, allowance: res.allowance });
@@ -167,6 +172,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           onChange={setRecipientIds}
           exclude={ccIds}
           max={LIMITS.recipientsMax}
+          allowSelf={kind !== "bonus"}
           placeholder={t("composer.toPlaceholder")}
           inputRef={searchRef}
           suggest={suggestTo}
@@ -180,6 +186,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           onChange={setCcIds}
           exclude={recipientIds}
           max={LIMITS.ccMax}
+          allowSelf
           placeholder={t("composer.ccPlaceholder")}
           inputRef={ccRef}
           suggest={suggestCc}
@@ -220,11 +227,21 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           ))}
         </div>
 
+        <label className={`private-toggle ${isPrivate ? "on" : ""}`}>
+          <input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} />
+          <LockClosedIcon className="ic" />
+          <span>
+            <b>{t("composer.private")}</b>
+            <small>{t("composer.privateDesc")}</small>
+          </span>
+          <span className="switch" aria-hidden="true" />
+        </label>
+
         {kind === "bonus" && (
           <div className="bonus-box">
             <span className="bonus-points">+{points}</span>
-            <div className={`bonus-total ${tooExpensive ? "bad" : ""}`}>
-              {t("composer.bonusSummary", { points, total: cost, remaining: allowance.remaining })}
+            <div className={`bonus-total ${tooExpensive || selfBonus ? "bad" : ""}`}>
+              {selfBonus ? t("err.no_self_bonus") : t("composer.bonusSummary", { points, total: cost, remaining: allowance.remaining })}
             </div>
           </div>
         )}
@@ -256,6 +273,7 @@ function PeoplePicker({
   onChange,
   exclude,
   max,
+  allowSelf = false,
   placeholder,
   inputRef,
   suggest,
@@ -265,6 +283,7 @@ function PeoplePicker({
   onChange: (ids: number[]) => void;
   exclude: number[];
   max: number;
+  allowSelf?: boolean;
   placeholder: string;
   inputRef: RefObject<HTMLInputElement | null>;
   suggest: (pool: User[]) => { user: User; tag?: string }[];
@@ -274,9 +293,14 @@ function PeoplePicker({
   const [focused, setFocused] = useState(false);
   const [cursor, setCursor] = useState(0);
 
-  const pool = (directory?.users ?? []).filter((u) => u.id !== me.user.id && !value.includes(u.id) && !exclude.includes(u.id));
+  const pool = (directory?.users ?? []).filter(
+    (u) => (allowSelf || u.id !== me.user.id) && !value.includes(u.id) && !exclude.includes(u.id),
+  );
   const candidates: { user: User; tag?: string }[] = query.trim()
-    ? pool.filter((u) => matches(u, query)).slice(0, 8).map((user) => ({ user }))
+    ? pool
+        .filter((u) => matches(u, query))
+        .slice(0, 8)
+        .map((user) => ({ user, tag: user.id === me.user.id ? t("composer.me") : undefined }))
     : suggest(pool);
 
   function add(u: User) {

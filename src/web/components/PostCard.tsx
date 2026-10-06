@@ -8,7 +8,7 @@ import {
   PaperAirplaneIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
-import { SparklesIcon } from "@heroicons/react/20/solid";
+import { LockClosedIcon, SparklesIcon } from "@heroicons/react/20/solid";
 import { api, type Comment, type Feed, type Post, type PostDetail, type Users } from "../api";
 import { errorText, relativeTime } from "../i18n";
 import { Link, navigate } from "../router";
@@ -80,7 +80,7 @@ export function PostCard({
     const el = e.target as Element;
     // A click that just dismissed a popover shouldn't also navigate away.
     if (popoverWasOpen.current) return;
-    if (el.closest("a, button, input, textarea, .popover, .comments, .avatar, .kind-badge, .points-badge, .value-chip")) return;
+    if (el.closest("a, button, input, textarea, .popover, .comments, .avatar, .private-badge, .kind-badge, .points-badge, .value-chip")) return;
     // Text stays selectable: a drag-select or a click on the words themselves doesn't count.
     if (window.getSelection()?.toString()) return;
     if (!el.closest('[aria-hidden="true"]') && overText(el, e.clientX, e.clientY)) return;
@@ -155,6 +155,12 @@ export function PostCard({
       </div>
 
       <div className="post-tags">
+        {post.private && (
+          <span className="private-badge" title={t("post.privateHint")}>
+            <LockClosedIcon className="ic" aria-hidden="true" />
+            {t("post.private")}
+          </span>
+        )}
         <span className={`kind-badge ${post.kind}`}>{bonus ? t("post.bonus") : t("post.kudos")}</span>
         {post.valueTag && <ValueChip id={post.valueTag} size="sm" />}
         {bonus && (
