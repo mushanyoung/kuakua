@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Local development only (`bun run dev`): local D1 + R2 under .wrangler/state.
+  // Deployments use local/wrangler.json, generated from .env.production by scripts/deploy.sh.
+  "name": "kuakua-dev",
+  "main": "src/server/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/avatars/*", "/healthz"]
+  },
+  "d1_databases": [{ "binding": "DB", "database_name": "kuakua", "database_id": "local-dev", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "kuakua-files" }],
+  "triggers": { "crons": ["0 19 * * *"] },
+  "vars": {
+    "ENVIRONMENT": "development",
+    "APP_VERSION": "dev",
+    "PUBLIC_URL": "http://127.0.0.1:4381",
+    "DEV_AUTH_EMAIL": "mushan@example.com",
+    "ADMIN_EMAILS": "mushan@example.com",
+    "ALLOWED_EMAIL_DOMAINS": "example.com",
+    "DIRECTORY_SOURCE": "roster",
+    "APP_TIMEZONE": "Asia/Shanghai",
+    "BONUS_MONTHLY_ALLOWANCE": "10",
+    "BONUS_POINTS": "1",
+    "CF_ACCESS_TEAM_DOMAIN": "",
+    "CF_ACCESS_AUD": "",
+    "LARK_APP_ID": "",
+    "LARK_BASE_URL": "https://open.larksuite.com",
+    "LARK_NOTIFY": "1",
+    "LARK_BROADCAST_CHAT_ID": "",
+    "VALUES_JSON": ""
+  },
+  "observability": { "enabled": true }
+}

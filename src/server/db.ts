@@ -1,113 +1,34 @@
-import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { config } from "./config";
+import { env } from "cloudflare:workers";
 
-mkdirSync(config.dataDir, { recursive: true });
+// Thin layer over D1. D1 only binds positional ?NNN parameters; the queries in this app
+// are written with $name placeholders, which q() rewrites (the same name maps to the same
+// position, so it can repeat). Schema lives in migrations/, applied by wrangler.
 
-export const db = new Database(join(config.dataDir, "kuakua.db"), { create: true, strict: true });
-db.exec("PRAGMA journal_mode = WAL");
-db.exec("PRAGMA foreign_keys = ON");
-db.exec("PRAGMA busy_timeout = 5000");
+type Params = Record<string, unknown>;
+type Value = string | number | null | ArrayBuffer;
 
-// Append-only list; index + 1 is the schema version stored in PRAGMA user_version.
-const migrations = [
-  `
-  CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    open_id TEXT UNIQUE,
-    email TEXT UNIQUE,
-    name TEXT NOT NULL,
-    en_name TEXT,
-    avatar_src TEXT,
-    avatar_ver TEXT,
-    dept_id TEXT,
-    job_title TEXT,
-    active INTEGER NOT NULL DEFAULT 1,
-    source TEXT NOT NULL DEFAULT 'lark',
-    lang TEXT,
-    joined_at INTEGER,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    last_seen_at INTEGER
-  );
-  CREATE TABLE departments (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    en_name TEXT,
-    parent_id TEXT,
-    updated_at INTEGER NOT NULL
-  );
-  CREATE TABLE posts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind TEXT NOT NULL CHECK (kind IN ('kudos', 'bonus')),
-    sender_id INTEGER NOT NULL REFERENCES users(id),
-    message TEXT NOT NULL,
-    value_tag TEXT,
-    points INTEGER NOT NULL DEFAULT 0,
-    cost INTEGER NOT NULL DEFAULT 0,
-    period TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    deleted_at INTEGER,
-    deleted_by INTEGER
-  );
-  CREATE INDEX posts_created ON posts(created_at DESC);
-  CREATE INDEX posts_sender_period ON posts(sender_id, period);
-  CREATE TABLE post_recipients (
-    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    PRIMARY KEY (post_id, user_id)
-  );
-  CREATE INDEX post_recipients_user ON post_recipients(user_id);
-  CREATE TABLE reactions (
-    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    emoji TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    PRIMARY KEY (post_id, user_id, emoji)
-  );
-  CREATE TABLE comments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    body TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    deleted_at INTEGER
-  );
-  CREATE INDEX comments_post ON comments(post_id, created_at);
-  CREATE TABLE sync_runs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    trigger TEXT NOT NULL,
-    started_at INTEGER NOT NULL,
-    finished_at INTEGER,
-    ok INTEGER,
-    users_seen INTEGER,
-    users_active INTEGER,
-    avatars_updated INTEGER,
-    error TEXT
-  );
-  `,
-  `
-  ALTER TABLE users ADD COLUMN leader_open_id TEXT;
-  CREATE TABLE post_cc (
-    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    PRIMARY KEY (post_id, user_id)
-  );
-  `,
-  `
-  ALTER TABLE posts ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
-  `,
-  `
-  ALTER TABLE users ADD COLUMN leader_email TEXT;
-  ALTER TABLE sync_runs ADD COLUMN warnings TEXT;
-  `,
-];
-
-const current = (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
-for (let v = current; v < migrations.length; v++) {
-  db.transaction(() => {
-    db.exec(migrations[v]!);
-    db.exec(`PRAGMA user_version = ${v + 1}`);
-  })();
+export function q(sql: string, params: Params = {}): D1PreparedStatement {
+  const names: string[] = [];
+  const text = sql.replace(/\$([A-Za-z_]\w*)/g, (_, name: string) => {
+    let i = names.indexOf(name);
+    if (i < 0) i = names.push(name) - 1;
+    return `?${i + 1}`;
+  });
+  const values = names.map((name): Value => {
+    if (!(name in params)) throw new Error(`query parameter $${name} is missing`);
+    const v = params[name];
+    if (v === undefined || v === null) return null;
+    if (typeof v === "boolean") return v ? 1 : 0;
+    if (typeof v === "string" || typeof v === "number" || v instanceof ArrayBuffer) return v;
+    throw new Error(`query parameter $${name} has unsupported type ${typeof v}`);
+  });
+  return env.DB.prepare(text).bind(...values);
 }
+
+export const db = {
+  get: <T>(sql: string, params?: Params) => q(sql, params).first<T>(),
+  all: async <T>(sql: string, params?: Params) => (await q(sql, params).all<T>()).results,
+  run: async (sql: string, params?: Params) => (await q(sql, params).run()).meta,
+  // Atomic: all statements commit together or none do.
+  batch: (statements: D1PreparedStatement[]) => env.DB.batch(statements),
+};

@@ -1,29 +1,20 @@
 {
+  // The Worker (src/server) is checked on its own with Workers runtime types from
+  // `wrangler types` (worker-configuration.d.ts); the rest of the repo uses DOM + Bun types.
   "compilerOptions": {
-    "lib": [
-      "ESNext",
-      "DOM",
-      "DOM.Iterable"
-    ],
-    "target": "ESNext",
+    "lib": ["ES2024"],
+    "target": "ES2024",
     "module": "Preserve",
     "moduleDetection": "force",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
-    "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
-    "types": [
-      "bun"
-    ]
+    "types": []
   },
-  "include": [
-    "src/web",
-    "src/shared",
-    "scripts"
-  ]
+  "include": ["./**/*.ts", "../shared/**/*.ts"]
 }

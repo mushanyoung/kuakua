@@ -1,88 +1,137 @@
-import { existsSync } from "node:fs";
-import { avatarFile, sniff, writeAvatar } from "./avatars";
-import { config } from "./config";
-import { db } from "./db";
+import { env } from "cloudflare:workers";
+import { putAvatar, shortHash } from "./avatars";
+import { db, q } from "./db";
 import type { SyncResult } from "./directory";
-import { readRoster, type RosterEntry } from "./roster-file";
+import { parseRoster } from "./roster-file";
 
-const deptId = (name: string) => `roster:${name}`;
+// scripts/push-roster.ts (run by scripts/deploy.sh) uploads ROSTER_FILE to R2 as
+// roster/roster.csv (or .json), the avatar files under roster/ with their relative paths,
+// and roster/_version, which changes whenever any of them does.
+const ROSTER_KEYS = ["roster/roster.csv", "roster/roster.json"];
 
-// Mirrors ROSTER_FILE into users/departments. People who drop out of the file are
-// deactivated (their history stays); a file with any error changes nothing.
+// The uploaded roster and the version to compare against the last sync.
+export async function rosterObject() {
+  for (const key of ROSTER_KEYS) {
+    const head = await env.FILES.head(key);
+    if (!head) continue;
+    const version = await env.FILES.head("roster/_version");
+    return { key, etag: version?.etag ?? head.etag };
+  }
+  return null;
+}
+
+type Existing = { id: number; email: string; avatar_src: string | null; avatar_ver: string | null; avatar_key: string | null };
+
+// Mirrors the uploaded roster into users/departments. People who drop out of it are
+// deactivated (their history stays); a roster with any error changes nothing.
 export async function syncRoster(): Promise<SyncResult> {
-  const { entries, errors, warnings } = readRoster(config.directory.rosterFile);
+  const found = await rosterObject();
+  const obj = found && (await env.FILES.get(found.key));
+  if (!found || !obj) throw new Error("no roster uploaded yet; scripts/deploy.sh uploads ROSTER_FILE");
+  const { entries, errors, warnings } = parseRoster(await obj.text(), found.key.endsWith(".json"));
   if (errors.length) throw new Error(errors.join("; "));
-  const now = Date.now();
 
-  type Existing = { id: number; avatar_src: string | null; avatar_ver: string | null };
-  const jobs: { row: Existing; entry: RosterEntry }[] = [];
+  const uploaded = new Map<string, string>();
+  let cursor: string | undefined;
+  do {
+    const page = await env.FILES.list({ prefix: "roster/", cursor });
+    for (const o of page.objects) uploaded.set(o.key, o.etag);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
 
-  db.transaction(() => {
-    const depts = new Map<string, string | null>();
-    for (const e of entries) if (e.department && !depts.get(e.department)) depts.set(e.department, e.departmentEn);
-    const upDept = db.query(
-      `INSERT INTO departments (id, name, en_name, parent_id, updated_at) VALUES ($id, $name, $en, NULL, $now)
-       ON CONFLICT(id) DO UPDATE SET name = excluded.name, en_name = excluded.en_name, updated_at = excluded.updated_at`,
-    );
-    for (const [name, en] of depts) upDept.run({ id: deptId(name), name, en, now });
-
-    const byEmail = db.query("SELECT id, avatar_src, avatar_ver FROM users WHERE email = $email");
-    const update = db.query(
-      `UPDATE users SET name = $name, en_name = $en, dept_id = $dept, job_title = $title, leader_email = $leader,
-         leader_open_id = NULL, active = 1, source = 'roster', updated_at = $now
-       WHERE id = $id`,
-    );
-    const insert = db.query(
-      `INSERT INTO users (email, name, en_name, dept_id, job_title, leader_email, active, source, created_at, updated_at)
-       VALUES ($email, $name, $en, $dept, $title, $leader, 1, 'roster', $now, $now)`,
-    );
-    const clearAvatar = db.query("UPDATE users SET avatar_src = NULL, avatar_ver = NULL WHERE id = $id");
-    for (const e of entries) {
-      const fields = {
-        name: e.name,
-        en: e.enName,
-        dept: e.department ? deptId(e.department) : null,
-        title: e.title,
-        leader: e.manager,
-        now,
-      };
-      let row = byEmail.get({ email: e.email }) as Existing | null;
-      if (row) update.run({ ...fields, id: row.id });
-      else row = { id: Number(insert.run({ ...fields, email: e.email }).lastInsertRowid), avatar_src: null, avatar_ver: null };
-      if (e.avatar) jobs.push({ row, entry: e });
-      else if (row.avatar_ver) clearAvatar.run({ id: row.id });
-    }
-    db.query(
-      `UPDATE users SET active = 0, updated_at = $now
-       WHERE source = 'roster' AND active = 1 AND email NOT IN (SELECT value FROM json_each($emails))`,
-    ).run({ now, emails: JSON.stringify(entries.map((e) => e.email)) });
-  })();
+  const emails = JSON.stringify(entries.map((e) => e.email));
+  const existing = await db.all<Existing>(
+    "SELECT id, email, avatar_src, avatar_ver, avatar_key FROM users WHERE email IN (SELECT value FROM json_each($emails))",
+    { emails },
+  );
+  const before = new Map(existing.map((r) => [r.email, r]));
 
   let avatarsUpdated = 0;
-  const setAvatar = db.query("UPDATE users SET avatar_src = $src, avatar_ver = $ver WHERE id = $id");
-  for (const { row, entry } of jobs) {
-    const avatar = entry.avatar!;
-    const src = avatar.kind === "file" ? avatar.path : avatar.url;
-    try {
-      let bytes: Uint8Array;
-      if (avatar.kind === "url") {
-        // Remote images are re-fetched only when the URL changes.
-        if (src === row.avatar_src && row.avatar_ver && existsSync(avatarFile(row.id, "240"))) continue;
-        const res = await fetch(avatar.url, { signal: AbortSignal.timeout(30_000) });
+  const remote: { email: string; url: string }[] = [];
+  const people = entries.map((e) => {
+    const prev = before.get(e.email);
+    let avatar: { src: string; ver: string | null; key: string | null } | null = null;
+    if (e.avatar?.kind === "file") {
+      const key = `roster/${e.avatar.path}`;
+      const etag = uploaded.get(key);
+      if (etag) avatar = { src: e.avatar.path, ver: etag.slice(0, 12), key };
+      else warnings.push(`line ${e.line}: avatar for ${e.email} was not uploaded: ${e.avatar.path}`);
+    } else if (e.avatar?.kind === "url") {
+      // Remote images are downloaded only when the URL changes.
+      if (prev?.avatar_src === e.avatar.url && prev.avatar_ver) avatar = { src: e.avatar.url, ver: prev.avatar_ver, key: prev.avatar_key };
+      else (avatar = { src: e.avatar.url, ver: null, key: null }), remote.push({ email: e.email, url: e.avatar.url });
+    }
+    if (avatar?.ver && avatar.ver !== prev?.avatar_ver) avatarsUpdated++;
+    return {
+      email: e.email,
+      name: e.name,
+      en: e.enName,
+      dept: e.department ? `roster:${e.department}` : null,
+      title: e.title,
+      manager: e.manager,
+      avatarSrc: avatar?.src ?? null,
+      avatarVer: avatar?.ver ?? null,
+      avatarKey: avatar?.key ?? null,
+    };
+  });
+  const departments = new Map<string, string | null>();
+  for (const e of entries) if (e.department && !departments.get(e.department)) departments.set(e.department, e.departmentEn);
+
+  const now = Date.now();
+  const field = (name: string) => `json_extract(value, '$.${name}')`;
+  await db.batch([
+    q(
+      `INSERT INTO departments (id, name, en_name, parent_id, updated_at)
+       SELECT 'roster:' || ${field("name")}, ${field("name")}, ${field("en")}, NULL, $now FROM json_each($depts) WHERE true
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name, en_name = excluded.en_name, updated_at = excluded.updated_at`,
+      { now, depts: JSON.stringify([...departments].map(([name, en]) => ({ name, en }))) },
+    ),
+    q(
+      `INSERT INTO users (email, name, en_name, dept_id, job_title, leader_email, avatar_src, avatar_ver, avatar_key,
+                          active, source, created_at, updated_at)
+       SELECT ${field("email")}, ${field("name")}, ${field("en")}, ${field("dept")}, ${field("title")}, ${field("manager")},
+              ${field("avatarSrc")}, ${field("avatarVer")}, ${field("avatarKey")}, 1, 'roster', $now, $now
+       FROM json_each($people) WHERE true
+       ON CONFLICT(email) DO UPDATE SET name = excluded.name, en_name = excluded.en_name, dept_id = excluded.dept_id,
+         job_title = excluded.job_title, leader_email = excluded.leader_email, leader_open_id = NULL,
+         avatar_src = excluded.avatar_src, avatar_ver = excluded.avatar_ver, avatar_key = excluded.avatar_key,
+         active = 1, source = 'roster', updated_at = excluded.updated_at`,
+      { now, people: JSON.stringify(people) },
+    ),
+    q(
+      `UPDATE users SET active = 0, updated_at = $now
+       WHERE source = 'roster' AND active = 1 AND email NOT IN (SELECT value FROM json_each($emails))`,
+      { now, emails },
+    ),
+  ]);
+
+  if (remote.length) {
+    const ids = await db.all<{ id: number; email: string }>(
+      "SELECT id, email FROM users WHERE email IN (SELECT value FROM json_each($emails))",
+      { emails: JSON.stringify(remote.map((r) => r.email)) },
+    );
+    const idOf = new Map(ids.map((r) => [r.email, r.id]));
+    const done: { id: number; ver: string; key: string }[] = [];
+    for (const { email, url } of remote) {
+      const id = idOf.get(email)!;
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        bytes = new Uint8Array(await res.arrayBuffer());
-      } else {
-        bytes = await Bun.file(avatar.path).bytes();
+        const key = `avatars/${id}-240`;
+        await putAvatar(key, new Uint8Array(await res.arrayBuffer()));
+        done.push({ id, ver: await shortHash(url), key });
+      } catch (e) {
+        warnings.push(`avatar for ${email} (${url}): ${(e as Error).message}`);
       }
-      if (sniff(bytes) === "application/octet-stream") throw new Error("not a JPEG, PNG, WebP or GIF image");
-      const ver = Bun.hash(bytes).toString(36).slice(0, 10);
-      if (ver === row.avatar_ver && existsSync(avatarFile(row.id, "240"))) continue;
-      await writeAvatar(row.id, "240", bytes);
-      await writeAvatar(row.id, "640", bytes);
-      setAvatar.run({ src, ver, id: row.id });
-      avatarsUpdated++;
-    } catch (e) {
-      warnings.push(`avatar for ${entry.email} (${src}): ${(e as Error).message}`);
+    }
+    if (done.length) {
+      await db.run(
+        `UPDATE users SET avatar_ver = j.ver, avatar_key = j.key
+         FROM (SELECT ${field("id")} AS id, ${field("ver")} AS ver, ${field("key")} AS key FROM json_each($done)) AS j
+         WHERE users.id = j.id`,
+        { done: JSON.stringify(done) },
+      );
+      avatarsUpdated += done.length;
     }
   }
   return { seen: entries.length, active: entries.length, avatarsUpdated, warnings };

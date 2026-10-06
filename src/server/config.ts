@@ -1,30 +1,36 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { env } from "cloudflare:workers";
 import { directorySourceOf, settingByKey } from "./settings";
 import { parseValues, setValues } from "../shared/values";
 
-// Every deployment-specific setting comes from the environment (.env.production in
-// production). settings.ts lists them with their defaults; `bun run doctor` checks them.
+// Every deployment-specific setting comes from the Worker's vars and secrets, which
+// scripts/deploy.sh generates from .env.production. settings.ts lists them with their
+// defaults; `bun run doctor` checks them.
 
-const env = process.env;
+const vars: Record<string, unknown> = Object.fromEntries(Object.entries(env));
 
 // Only settings declared in settings.ts can be read, so none goes undocumented.
 function get(key: string) {
   const setting = settingByKey.get(key);
   if (!setting) throw new Error(`setting ${key} is not declared in settings.ts`);
-  const v = env[key];
-  return v === undefined || v === "" ? (setting.default ?? "") : v;
+  const v = vars[key];
+  return typeof v === "string" && v !== "" ? v : (setting.default ?? "");
 }
 
-const list = (v: string | undefined) =>
-  (v ?? "")
+// Vars that scripts/deploy.sh derives rather than copies from .env.production.
+const derived = (key: "ENVIRONMENT" | "APP_VERSION" | "VALUES_JSON") => {
+  const v = vars[key];
+  return typeof v === "string" ? v : "";
+};
+
+const list = (v: string) =>
+  v
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
 
-const num = (v: string | undefined, fallback: number) => {
+const num = (v: string, fallback: number) => {
   const n = Number(v);
-  return Number.isFinite(n) && v !== undefined && v !== "" ? n : fallback;
+  return Number.isFinite(n) && v !== "" ? n : fallback;
 };
 
 export type DirectorySource = "lark" | "roster";
@@ -34,14 +40,10 @@ if (directorySource !== "lark" && directorySource !== "roster") {
   throw new Error(`DIRECTORY_SOURCE must be "lark" or "roster", got "${directorySource}"`);
 }
 
-const port = num(get("PORT"), 4380);
-
 export const config = {
-  production: env.NODE_ENV === "production",
-  host: get("HOST"),
-  port,
-  dataDir: resolve(get("DATA_DIR")),
-  publicUrl: (get("PUBLIC_URL") || `http://127.0.0.1:${port}`).replace(/\/$/, ""),
+  production: derived("ENVIRONMENT") === "production",
+  version: derived("APP_VERSION") || "dev",
+  publicUrl: get("PUBLIC_URL").replace(/\/$/, ""),
   timezone: get("APP_TIMEZONE"),
 
   // Admin: directory sync, bonus report, leaderboard, people directory, moderation.
@@ -56,17 +58,12 @@ export const config = {
   // Anyone with an email at these domains may sign in, on top of everyone in the directory.
   allowedDomains: list(get("ALLOWED_EMAIL_DOMAINS")),
 
-  directory: {
-    source: directorySource as DirectorySource,
-    rosterFile: resolve(get("ROSTER_FILE")),
-  },
-  valuesFile: get("VALUES_FILE") ? resolve(get("VALUES_FILE")) : null,
+  directory: { source: directorySource as DirectorySource },
 
   lark: {
     appId: get("LARK_APP_ID"),
     appSecret: get("LARK_APP_SECRET"),
     baseUrl: get("LARK_BASE_URL").replace(/\/$/, ""),
-    syncIntervalHours: num(get("LARK_SYNC_INTERVAL_HOURS"), 6),
     notify: get("LARK_NOTIFY") !== "0",
     broadcastChatId: get("LARK_BROADCAST_CHAT_ID"),
   },
@@ -78,13 +75,8 @@ export const config = {
   },
 };
 
-if (config.valuesFile) {
-  try {
-    setValues(parseValues(JSON.parse(readFileSync(config.valuesFile, "utf8"))));
-  } catch (e) {
-    throw new Error(`VALUES_FILE ${config.valuesFile}: ${(e as Error).message}`);
-  }
-}
+// VALUES_FILE is read at deploy time and passed in as JSON.
+if (derived("VALUES_JSON")) setValues(parseValues(JSON.parse(derived("VALUES_JSON"))));
 
 export const ADMIN_EMAILS: ReadonlySet<string> = new Set(config.adminEmails);
 

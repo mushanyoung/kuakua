@@ -33,11 +33,12 @@ export async function authenticate(req: Request): Promise<string> {
     } catch {
       throw new HttpError(401, "invalid_access_token");
     }
-  } else if (devEmail) {
-    email = devEmail;
+  } else if (devEmail && !config.production) {
+    // Local development: sign in as DEV_AUTH_EMAIL, or as X-Dev-Email to try other people.
+    email = req.headers.get("x-dev-email") ?? devEmail;
   }
   if (!email) throw new HttpError(401, "unauthenticated");
   email = email.toLowerCase();
-  if (!canSignIn(email)) throw new HttpError(403, "email_domain_not_allowed");
+  if (!(await canSignIn(email))) throw new HttpError(403, "email_domain_not_allowed");
   return email;
 }

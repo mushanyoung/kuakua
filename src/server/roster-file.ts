@@ -1,13 +1,17 @@
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
-import { dirname, extname, resolve } from "node:path";
-
-// The roster is a CSV (or JSON array of objects with the same keys) listing everyone
-// who can be thanked. See deploy/roster.example.csv. Parsing is kept free of database
-// access so `bun run doctor` can check a roster without touching data.
+// The roster is a CSV (or a JSON array of objects with the same keys) listing everyone
+// who can be thanked; see deploy/roster.example.csv. This module only parses and
+// validates text, so the Worker (reading it from R2) and local scripts (reading it from
+// disk) share it. Local scripts add file checks for avatars.
 
 export const ROSTER_COLUMNS = ["email", "name", "en_name", "department", "department_en", "title", "manager", "avatar"] as const;
 
+export type RosterAvatar =
+  // A path relative to the roster file, normalised to forward slashes ("avatars/alice.jpg").
+  | { kind: "file"; path: string }
+  | { kind: "url"; url: string };
+
 export type RosterEntry = {
+  line: number;
   email: string;
   name: string;
   enName: string | null;
@@ -15,25 +19,12 @@ export type RosterEntry = {
   departmentEn: string | null;
   title: string | null;
   manager: string | null;
-  avatar: { kind: "file"; path: string } | { kind: "url"; url: string } | null;
+  avatar: RosterAvatar | null;
 };
 
 export type ParsedRoster = { entries: RosterEntry[]; errors: string[]; warnings: string[] };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const AVATAR_WARN_BYTES = 1024 * 1024;
-
-function looksLikeImage(path: string) {
-  const head = new Uint8Array(12);
-  const fd = openSync(path, "r");
-  try {
-    readSync(fd, head, 0, 12, 0);
-  } finally {
-    closeSync(fd);
-  }
-  const ascii = (from: number, s: string) => [...s].every((c, i) => head[from + i] === c.charCodeAt(0));
-  return (head[0] === 0xff && head[1] === 0xd8) || ascii(1, "PNG") || ascii(8, "WEBP") || ascii(0, "GIF");
-}
 
 // RFC 4180: quoted fields may contain commas, quotes ("") and newlines.
 export function parseCsv(text: string): string[][] {
@@ -59,8 +50,21 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-function readRows(file: string, text: string): { rows: { line: number; cells: Record<string, string> }[]; columns: string[] } {
-  if (extname(file).toLowerCase() === ".json") {
+// "./avatars/../avatars/a.jpg" → "avatars/a.jpg"; null if it escapes the roster's folder.
+export function normalizeRelative(path: string): string | null {
+  const out: string[] = [];
+  for (const part of path.replace(/\\/g, "/").split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      if (!out.length) return null;
+      out.pop();
+    } else out.push(part);
+  }
+  return out.length ? out.join("/") : null;
+}
+
+function readRows(text: string, json: boolean): { rows: { line: number; cells: Record<string, string> }[]; columns: string[] } {
+  if (json) {
     const data = JSON.parse(text) as unknown;
     if (!Array.isArray(data)) throw new Error("expected a JSON array of objects");
     const columns = new Set<string>();
@@ -85,16 +89,14 @@ function readRows(file: string, text: string): { rows: { line: number; cells: Re
   return { rows, columns };
 }
 
-export function readRoster(file: string): ParsedRoster {
+export function parseRoster(text: string, json = false): ParsedRoster {
   const errors: string[] = [];
   const warnings: string[] = [];
-  if (!existsSync(file)) return { entries: [], errors: [`roster file not found: ${file}`], warnings };
-
   let parsed: ReturnType<typeof readRows>;
   try {
-    parsed = readRows(file, readFileSync(file, "utf8").replace(/^﻿/, ""));
+    parsed = readRows(text.replace(/^﻿/, ""), json);
   } catch (e) {
-    return { entries: [], errors: [`${file}: ${(e as Error).message}`], warnings };
+    return { entries: [], errors: [(e as Error).message], warnings };
   }
   const { rows, columns } = parsed;
   const unknown = columns.filter((c) => !ROSTER_COLUMNS.includes(c as never));
@@ -104,7 +106,6 @@ export function readRoster(file: string): ParsedRoster {
   }
   if (errors.length) return { entries: [], errors, warnings };
 
-  const base = dirname(file);
   const entries: RosterEntry[] = [];
   const seen = new Set<string>();
   for (const { line, cells } of rows) {
@@ -126,22 +127,19 @@ export function readRoster(file: string): ParsedRoster {
       continue;
     }
 
-    let avatar: RosterEntry["avatar"] = null;
-    const rawAvatar = get("avatar");
-    if (rawAvatar && /^https?:\/\//i.test(rawAvatar)) avatar = { kind: "url", url: rawAvatar };
-    else if (rawAvatar) {
-      const path = resolve(base, rawAvatar);
-      if (!existsSync(path)) warnings.push(`${at}: avatar for ${email} not found: ${path}`);
-      else if (!looksLikeImage(path)) warnings.push(`${at}: avatar for ${email} is not a JPEG, PNG, WebP or GIF: ${path}`);
-      else {
-        if (statSync(path).size > AVATAR_WARN_BYTES) warnings.push(`${at}: avatar for ${email} is over 1 MB; a ~640px square is plenty`);
-        avatar = { kind: "file", path };
-      }
+    let avatar: RosterAvatar | null = null;
+    const raw = get("avatar");
+    if (raw && /^https?:\/\//i.test(raw)) avatar = { kind: "url", url: raw };
+    else if (raw) {
+      const path = normalizeRelative(raw);
+      if (path) avatar = { kind: "file", path };
+      else warnings.push(`${at}: avatar for ${email} must be inside the roster's folder: ${raw}`);
     }
 
     let manager = get("manager")?.toLowerCase() ?? null;
     if (manager === email) manager = null;
     entries.push({
+      line,
       email,
       name,
       enName: get("en_name"),

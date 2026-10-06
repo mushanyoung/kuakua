@@ -8,3 +8,5 @@ data-*/
 # deployment-local files: roster, avatars, values, deploy state, tunnel token
 local/
 *.log
+.wrangler/
+dist/

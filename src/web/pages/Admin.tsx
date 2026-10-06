@@ -25,7 +25,6 @@ type Status = {
   running: boolean;
   source: "lark" | "roster";
   configured: boolean;
-  rosterFile: string | null;
   periods: string[];
 };
 type Report = { period: string; rows: { userId: number; count: number; points: number; email: string | null }[]; users: Users };
@@ -104,12 +103,6 @@ export function Admin() {
           {s && !s.configured && <p className="form-error">{t(roster ? "admin.notConfiguredRoster" : "admin.notConfiguredLark")}</p>}
           {s && (
             <dl className="kv">
-              {s.rosterFile && (
-                <>
-                  <dt>{t("admin.rosterFile")}</dt>
-                  <dd className="mono">{s.rosterFile}</dd>
-                </>
-              )}
               <dt>{t("admin.lastSync")}</dt>
               <dd>{s.lastOk ? `${relativeTime(s.lastOk.finished_at ?? s.lastOk.started_at, lang, t)} · ${t("admin.syncResult", { users: s.lastOk.users_seen ?? 0, avatars: s.lastOk.avatars_updated ?? 0 })}` : t("admin.never")}</dd>
               <dt>{t("admin.lastRun")}</dt>

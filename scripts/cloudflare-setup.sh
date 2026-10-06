@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
-# Idempotently puts this deployment (PUBLIC_URL) behind Cloudflare on this machine:
-#   1. a Cloudflare Tunnel: CLOUDFLARE_TUNNEL_ID, or one named after SERVICE_NAME (found or created).
-#      If no connector is running for it, writes local/cloudflared-token and prints the install command.
-#   2. proxied CNAME <hostname> -> <tunnel>.cfargotunnel.com
-#   3. tunnel ingress <hostname> -> http://127.0.0.1:<PORT> (other hostnames' rules are kept)
+# Idempotently prepares the Cloudflare account for this deployment (PUBLIC_URL):
+#   1. checks the Zero Trust organization (its team domain is the sign-in page)
+#   2. D1 database <WORKER_NAME>            (created in DATA_LOCATION if missing)
+#   3. R2 bucket <WORKER_NAME>-files        (avatars and the uploaded roster)
 #   4. an Access policy "kuakua: <hostname>" allowing ADMIN_EMAILS, ALLOWED_EMAIL_DOMAINS and,
 #      for DIRECTORY_SOURCE=roster, everyone in the roster (re-run after changing any of those)
 #   5. the Access app for <hostname> (created with that policy) and a public bypass for /healthz
-#   6. writes CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD into .env.production
+#   6. writes CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD and D1_DATABASE_ID into .env.production
+# The Worker and its Custom Domain are created by scripts/deploy.sh. A Custom Domain can't take
+# a hostname that still has a DNS record (e.g. the CNAME of an old tunnel setup): this script
+# reports it, and with --replace-dns deletes it — the old site is offline from then until
+# scripts/deploy.sh finishes.
 #
 # Settings come from .env.production; credentials from the file named by CLOUDFLARE_ENV_FILE
-# (default .env.cloudflare, never committed):
-#   CLOUDFLARE_API_TOKEN   token with Account › Cloudflare Tunnel: Edit, Account › Access: Apps and
-#                          Policies: Edit, Account › Access: Organizations, Identity Providers, and
-#                          Groups: Read, Zone › DNS: Edit (for the hostname's zone)
-#   CLOUDFLARE_ACCOUNT_ID
-#   CLOUDFLARE_ZONE_ID     optional; looked up from the hostname
-#   CLOUDFLARE_TUNNEL_ID   optional; see step 1 (saved back to the file once known)
+# (default .env.cloudflare, never committed): CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+# Token permissions: see AGENTS.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+REPLACE_DNS=0
+[[ "${1:-}" == "--replace-dns" ]] && REPLACE_DNS=1
 
 conf() { bun scripts/config.ts get "$1" --raw; }
 for tool in curl jq bun; do command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 1; }; done
@@ -36,8 +37,9 @@ PUBLIC_URL="$(conf PUBLIC_URL)"
 HOST="${PUBLIC_URL#https://}"
 HOST="${HOST%%/*}"
 [[ -n "$HOST" && "$PUBLIC_URL" == https://* ]] || { echo "PUBLIC_URL must be https://<hostname>" >&2; exit 1; }
-ORIGIN="http://127.0.0.1:$(conf PORT)"
-SERVICE="$(conf SERVICE_NAME)"
+NAME="$(conf WORKER_NAME)"
+BUCKET="$NAME-files"
+LOCATION="$(conf DATA_LOCATION)"
 APP_NAME="夸夸 Kuakua ($HOST)"
 POLICY_NAME="kuakua: $HOST"
 API="https://api.cloudflare.com/client/v4"
@@ -53,71 +55,33 @@ cf() {
   echo "$out"
 }
 
-remember() { # remember KEY VALUE in the credentials file
-  [[ -f "$CF_FILE" ]] || install -m 600 /dev/null "$CF_FILE"
-  if grep -q "^$1=" "$CF_FILE"; then sed -i "s|^$1=.*|$1=$2|" "$CF_FILE"; else echo "$1=$2" >>"$CF_FILE"; fi
-}
-
-# 0. Zero Trust organization (team domain)
+# 1. Zero Trust organization
 TEAM_DOMAIN="$(cf GET "$ACCT/access/organizations" | jq -r '.result.auth_domain // empty')" || true
 if [[ -z "$TEAM_DOMAIN" ]]; then
   echo "This account has no Cloudflare Zero Trust organization yet. Open the Zero Trust dashboard once," >&2
   echo "pick a team name, and add a login method (Settings → Authentication; One-time PIN works), then re-run." >&2
   exit 1
 fi
+echo "access: team domain $TEAM_DOMAIN" >&2
 
-# 1. Tunnel
-if [[ -z "${CLOUDFLARE_TUNNEL_ID:-}" ]]; then
-  CLOUDFLARE_TUNNEL_ID="$(cf GET "$ACCT/cfd_tunnel?name=$SERVICE&is_deleted=false" | jq -r '.result[0].id // empty')"
-  if [[ -z "$CLOUDFLARE_TUNNEL_ID" ]]; then
-    body="$(jq -n --arg n "$SERVICE" '{name: $n, config_src: "cloudflare"}')"
-    CLOUDFLARE_TUNNEL_ID="$(cf POST "$ACCT/cfd_tunnel" "$body" | jq -r .result.id)"
-    echo "tunnel: created $SERVICE ($CLOUDFLARE_TUNNEL_ID)" >&2
-  fi
-  remember CLOUDFLARE_TUNNEL_ID "$CLOUDFLARE_TUNNEL_ID"
-fi
-connections="$(cf GET "$ACCT/cfd_tunnel/$CLOUDFLARE_TUNNEL_ID" | jq '.result.connections | length')"
-if [[ "$connections" == "0" ]]; then
-  mkdir -p local
-  cf GET "$ACCT/cfd_tunnel/$CLOUDFLARE_TUNNEL_ID/token" | jq -r .result >local/cloudflared-token
-  chmod 600 local/cloudflared-token
-  echo "tunnel: no connector is running. On this machine run:" >&2
-  echo "    sudo cloudflared service install \"\$(cat local/cloudflared-token)\"" >&2
+# 2. D1
+DB_ID="$(cf GET "$ACCT/d1/database?name=$NAME" | jq -r --arg n "$NAME" '[.result[] | select(.name == $n)][0].uuid // empty')"
+if [[ -z "$DB_ID" ]]; then
+  body="$(jq -n --arg n "$NAME" --arg l "$LOCATION" '{name: $n} + (if $l == "" then {} else {primary_location_hint: $l} end)')"
+  DB_ID="$(cf POST "$ACCT/d1/database" "$body" | jq -r .result.uuid)"
+  echo "d1: created $NAME ($DB_ID)${LOCATION:+ in $LOCATION}" >&2
 else
-  echo "tunnel: $CLOUDFLARE_TUNNEL_ID has $connections connection(s)" >&2
+  echo "d1: $NAME exists ($DB_ID)" >&2
 fi
 
-# 2. DNS
-if [[ -z "${CLOUDFLARE_ZONE_ID:-}" ]]; then
-  candidate="$HOST"
-  while [[ "$candidate" == *.* && -z "${CLOUDFLARE_ZONE_ID:-}" ]]; do
-    CLOUDFLARE_ZONE_ID="$(cf GET "$API/zones?name=$candidate&account.id=$CLOUDFLARE_ACCOUNT_ID" | jq -r '.result[0].id // empty')"
-    candidate="${candidate#*.}"
-  done
-  [[ -n "$CLOUDFLARE_ZONE_ID" ]] || { echo "No zone in this account covers $HOST" >&2; exit 1; }
-  remember CLOUDFLARE_ZONE_ID "$CLOUDFLARE_ZONE_ID"
-fi
-target="$CLOUDFLARE_TUNNEL_ID.cfargotunnel.com"
-record="$(jq -n --arg n "$HOST" --arg c "$target" '{type: "CNAME", name: $n, content: $c, proxied: true, ttl: 1, comment: "kuakua via tunnel"}')"
-existing="$(cf GET "$API/zones/$CLOUDFLARE_ZONE_ID/dns_records?type=CNAME&name=$HOST" | jq -r '.result[0].id // empty')"
-if [[ -n "$existing" ]]; then
-  cf PUT "$API/zones/$CLOUDFLARE_ZONE_ID/dns_records/$existing" "$record" >/dev/null && echo "dns: updated $HOST -> $target" >&2
+# 3. R2
+if cf GET "$ACCT/r2/buckets?name_contains=$BUCKET" | jq -e --arg b "$BUCKET" '.result.buckets[] | select(.name == $b)' >/dev/null; then
+  echo "r2: $BUCKET exists" >&2
 else
-  cf POST "$API/zones/$CLOUDFLARE_ZONE_ID/dns_records" "$record" >/dev/null && echo "dns: created $HOST -> $target" >&2
+  body="$(jq -n --arg n "$BUCKET" --arg l "$LOCATION" '{name: $n} + (if $l == "" then {} else {locationHint: $l} end)')"
+  cf POST "$ACCT/r2/buckets" "$body" >/dev/null
+  echo "r2: created $BUCKET${LOCATION:+ in $LOCATION}" >&2
 fi
-
-# 3. Tunnel ingress: replace any rule for this hostname, keep everything else, keep the catch-all last.
-current="$(cf GET "$ACCT/cfd_tunnel/$CLOUDFLARE_TUNNEL_ID/configurations")"
-payload="$(jq --arg h "$HOST" --arg s "$ORIGIN" '
-  (.result.config // {}) as $c
-  | ($c.ingress // [] | map(select(.hostname != $h))) as $rest
-  | {config: ($c | .ingress = (
-      ($rest | map(select(.hostname != null)))
-      + [{hostname: $h, service: $s, originRequest: {}}]
-      + (($rest | map(select(.hostname == null))) | if length == 0 then [{service: "http_status:404"}] else . end)
-    ))}' <<<"$current")"
-cf PUT "$ACCT/cfd_tunnel/$CLOUDFLARE_TUNNEL_ID/configurations" "$payload" >/dev/null
-echo "tunnel: $HOST -> $ORIGIN" >&2
 
 # 4. Access policy managed by this script
 include="$(bun scripts/config.ts access-include)"
@@ -146,7 +110,7 @@ if [[ -z "$app" ]]; then
   app="$(cf POST "$ACCT/access/apps" "$body" | jq -c .result)"
   echo "access: created app $(jq -r .id <<<"$app")" >&2
 else
-  echo "access: app already exists $(jq -r .id <<<"$app")" >&2
+  echo "access: app for $HOST exists $(jq -r .id <<<"$app")" >&2
   if ! jq -e --arg pid "$policy_id" '.policies // [] | map(.id) | index($pid)' <<<"$app" >/dev/null; then
     echo "access: note — that app doesn't use \"$POLICY_NAME\"; its own policies decide who gets in." >&2
   fi
@@ -159,7 +123,30 @@ if ! jq -e --arg d "$HOST/healthz" '.result[] | select(.domain == $d)' <<<"$apps
   cf POST "$ACCT/access/apps" "$body" >/dev/null && echo "access: created /healthz bypass" >&2
 fi
 
+# DNS: a Custom Domain needs the hostname free of other records.
+zone=""
+candidate="$HOST"
+while [[ "$candidate" == *.* && -z "$zone" ]]; do
+  zone="$(cf GET "$API/zones?name=$candidate&account.id=$CLOUDFLARE_ACCOUNT_ID" | jq -r '.result[0].id // empty')"
+  candidate="${candidate#*.}"
+done
+[[ -n "$zone" ]] || { echo "No zone in this account covers $HOST" >&2; exit 1; }
+ours="$(cf GET "$ACCT/workers/domains?hostname=$HOST" | jq -r --arg s "$NAME" '[.result[] | select(.service == $s)] | length')"
+if [[ "$ours" == "0" ]]; then
+  records="$(cf GET "$API/zones/$zone/dns_records?name=$HOST" | jq -c '[.result[] | {id, type, content}]')"
+  if [[ "$(jq length <<<"$records")" -gt 0 ]]; then
+    if [[ "$REPLACE_DNS" == 1 ]]; then
+      for id in $(jq -r '.[].id' <<<"$records"); do cf DELETE "$API/zones/$zone/dns_records/$id" >/dev/null; done
+      echo "dns: deleted $(jq -c 'map("\(.type) \(.content)")' <<<"$records") for $HOST — run scripts/deploy.sh now" >&2
+    else
+      echo "dns: $HOST still has $(jq -c 'map("\(.type) \(.content)")' <<<"$records"); the Worker can't take it until that's" >&2
+      echo "     removed. When you're ready to switch, re-run with --replace-dns, then scripts/deploy.sh." >&2
+    fi
+  fi
+fi
+
 # 6. App settings
 bun scripts/config.ts set CF_ACCESS_TEAM_DOMAIN "$TEAM_DOMAIN" >&2
 bun scripts/config.ts set CF_ACCESS_AUD "$(jq -r .aud <<<"$app")" >&2
-echo "done: https://$HOST is served by tunnel $CLOUDFLARE_TUNNEL_ID; run scripts/deploy.sh to (re)start the app." >&2
+bun scripts/config.ts set D1_DATABASE_ID "$DB_ID" >&2
+echo "done: next, scripts/deploy.sh" >&2

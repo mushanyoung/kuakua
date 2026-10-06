@@ -3,14 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "DATA_DIR=./data-demo DEV_AUTH_EMAIL=mushan@example.com ADMIN_EMAILS=mushan@example.com ALLOWED_EMAIL_DOMAINS=example.com PORT=4381 bun --hot src/server/index.ts",
-    "demo:seed": "DATA_DIR=./data-demo bun scripts/seed-demo.ts",
-    "start": "NODE_ENV=production bun src/server/index.ts",
-    "sync": "NODE_ENV=production bun src/server/sync-cli.ts",
+    "dev": "bun scripts/dev.ts",
+    "demo:seed": "bunx wrangler d1 migrations apply kuakua --local && bun scripts/seed-demo.ts",
+    "build": "bun scripts/build-web.ts",
     "doctor": "bun scripts/config.ts doctor",
     "config": "bun scripts/config.ts",
     "deploy": "./scripts/deploy.sh",
-    "typecheck": "tsc --noEmit"
+    "types": "wrangler types src/server/worker-configuration.d.ts --strict-vars=false",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/server"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
@@ -28,6 +28,7 @@
     "@types/canvas-confetti": "^1.9.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "wrangler": "^4.148.0"
   }
 }

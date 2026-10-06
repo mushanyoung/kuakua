@@ -1,6 +1,6 @@
 # 夸夸 Kuakua
 
-团队内部互相夸夸的网站：发 **Kudos**（表扬，不限次数）或 **Peer Bonus**（附带积分，每人每月有额度）。由 Cloudflare Access 负责登录，一台机器上一个 Bun 进程 + SQLite 就能跑。
+团队内部互相夸夸的网站：发 **Kudos**（表扬，不限次数）或 **Peer Bonus**（附带积分，每人每月有额度）。整站跑在 Cloudflare 上（Workers + D1 + R2），由 Cloudflare Access 负责登录，没有需要维护的服务器。
 
 **部署、升级、改配置：看 [AGENTS.md](AGENTS.md)**（写给 agent 的逐步指南，人也能照着做）。
 
@@ -8,8 +8,8 @@
 
 - 中文 / English 切换（默认中文，偏好记在服务端，Lark 通知也按这个语言发）
 - 人员名单二选一：
-  - **名单文件**（`DIRECTORY_SOURCE=roster`）：一份 CSV/JSON，列出邮箱、姓名、部门、职务、上级和头像；文件改了自动同步
-  - **Lark / 飞书通讯录**（`DIRECTORY_SOURCE=lark`）：自动同步同事、部门、头像（默认每 6 小时），并发 Lark 通知
+  - **名单文件**（`DIRECTORY_SOURCE=roster`）：一份 CSV/JSON，列出邮箱、姓名、部门、职务、上级和头像；上传后网站一分钟内自动同步
+  - **Lark / 飞书通讯录**（`DIRECTORY_SOURCE=lark`）：每天自动同步同事、部门、头像（只下载变了的头像），并发 Lark 通知
 - 夸夸墙、表情回应（含一键 +1）、评论、个人主页、个人夸夸链接
 - 抄送：被抄送的人能看到这条感谢（接了 Lark 时会收到通知）但不算被夸；默认推荐被夸同事的上级和你自己的上级
 - 秘密夸：只有发送人、被夸的人和抄送的人能看到（夸夸墙、详情、个人主页、评论、表情都按这个过滤；别人打开链接是 404），不广播到群、不进首页关系图；首页总数、光荣榜和 Peer Bonus 报表这些不含内容的统计仍然计入
@@ -28,30 +28,32 @@
 ## 架构
 
 ```
-浏览器 → Cloudflare Access（邮箱登录）→ Cloudflare Tunnel → 127.0.0.1:PORT（本机 Bun 进程，systemd 管理）
-                                                             ├─ SQLite  DATA_DIR/kuakua.db（每日备份到 DATA_DIR/backups，保留 14 天）
-                                                             └─ 头像    DATA_DIR/avatars/
+浏览器 → Cloudflare Access（邮箱登录）→ Worker（自定义域名）
+                                         ├─ 静态资源  dist/（网页、字体，Workers Static Assets）
+                                         ├─ D1        数据库（自带 30 天时间点还原）
+                                         ├─ R2        头像、上传的名单
+                                         └─ Cron      每日同步通讯录
 ```
 
-- `src/server/` Bun HTTP 服务
-  - `settings.ts` 所有配置项的声明（默认值、说明、校验），`config.ts` 读取它们
+- `src/server/` Worker
+  - `worker.ts` 入口和路由；`settings.ts` 所有配置项的声明，`config.ts` 读取它们
   - `auth.ts` 校验 `Cf-Access-Jwt-Assertion`（issuer + AUD）
-  - `directory.ts` 名单同步调度；`roster.ts` / `roster-file.ts` 名单文件；`lark.ts` Lark 通讯录同步和通知
-  - `store.ts` 数据层，`db.ts` 结构迁移
-- `src/web/` React 前端，由 Bun 的 HTML import 在启动时打包；字体自托管（`/fonts/*`，大陆可访问）
+  - `store.ts` 数据层，`db.ts` D1 封装；结构在 `migrations/`
+  - `directory.ts` 名单同步调度；`roster.ts` / `roster-file.ts` 名单；`lark.ts` Lark 通讯录同步和通知；`avatars.ts` R2 头像
+- `src/web/` React 前端，部署时由 `scripts/build-web.ts` 打包到 `dist/`；字体自托管（`/fonts/*`，大陆可访问）
 - `src/shared/values.ts` 品质标签和表情回应，前后端共用
-- `scripts/` `config.ts`（`bun run doctor` / `bun run config`）、`deploy.sh`、`cloudflare-setup.sh`、`backup.ts`
-- `deploy/` systemd 单元模板、名单和品质标签的示例
+- `scripts/` `config.ts`（`bun run doctor` / `bun run config`）、`deploy.sh`、`cloudflare-setup.sh`、`push-roster.ts`、`import-sqlite.ts`（从旧的本机部署迁移数据）
+- `deploy/` 名单和品质标签的示例
 
 ## 常用命令
 
 ```bash
 bun run doctor                       # 体检部署配置
-bun run config list                  # 查看配置（密钥打码）；set KEY VALUE 修改
+bun run config list                  # 查看配置（密钥打码）；set KEY VALUE / unset KEY 修改
+./scripts/cloudflare-setup.sh        # 准备 D1、R2、Access（幂等）
 ./scripts/deploy.sh                  # 部署 / 拉代码后重新部署
-./scripts/cloudflare-setup.sh        # 配置 Cloudflare tunnel、DNS、Access（幂等）
-bun run sync                         # 立即同步一次名单 / 通讯录（也可以在管理页点）
-sudo journalctl -u kuakua -f         # 日志（服务名见 SERVICE_NAME）
+bun scripts/push-roster.ts           # 只上传改过的名单和头像
+bunx wrangler tail -c local/wrangler.json   # 线上实时日志
 ```
 
 ## Lark 应用需要的权限（`DIRECTORY_SOURCE=lark`）
@@ -73,7 +75,7 @@ sudo journalctl -u kuakua -f         # 日志（服务名见 SERVICE_NAME）
 
 ```bash
 bun install
-bun run demo:seed      # 在 ./data-demo 生成演示数据（24 位假同事、64 条感谢）
-bun run dev            # http://127.0.0.1:4381 ，以 mushan@example.com（管理员）身份登录
+bun run demo:seed      # 本地 D1 填演示数据（24 位假同事、64 条感谢）
+bun run dev            # http://127.0.0.1:4381 ，本地 D1/R2，以 mushan@example.com（管理员）身份登录
 bun run typecheck
 ```

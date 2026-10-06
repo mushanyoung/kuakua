@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
-# (Re)deploys this checkout as a systemd service. Idempotent: run it for the first deploy and
-# after every `git pull`. All deployment state lives outside git (.env.production, local/,
-# DATA_DIR), so pulling never touches it.
+# (Re)deploys this checkout to Cloudflare Workers. Idempotent: run it for the first deploy (after
+# scripts/cloudflare-setup.sh) and after every `git pull`. All deployment state lives outside git
+# (.env.production, the credentials file, local/), so pulling never touches it.
 #
 #   1. shows what changed since the last deploy
-#   2. installs dependencies
-#   3. runs `bun run doctor` and stops if anything required is missing or wrong
-#   4. backs up the database (schema migrations run automatically on start)
-#   5. installs / refreshes the systemd unit from deploy/kuakua.service.in
-#   6. restarts the service and waits for /healthz
-#
-# Needs sudo for systemctl and /etc/systemd/system.
+#   2. installs dependencies, runs `bun run doctor` and stops if anything is missing or wrong
+#   3. builds the web app and writes local/wrangler.json from .env.production
+#   4. notes a D1 Time Travel bookmark (restore point), then applies D1 migrations
+#   5. uploads the roster and its avatars (DIRECTORY_SOURCE=roster)
+#   6. deploys the Worker with its secrets, and waits until https://<host>/healthz runs the new code
 set -euo pipefail
 cd "$(dirname "$0")/.."
-ROOT="$(pwd)"
 
 conf() { bun scripts/config.ts get "$1" --raw; }
 
@@ -22,8 +19,17 @@ if [[ ! -f .env.production ]]; then
   exit 1
 fi
 
-SERVICE="$(conf SERVICE_NAME)"
-PORT="$(conf PORT)"
+CF_FILE="${CLOUDFLARE_ENV_FILE:-$(conf CLOUDFLARE_ENV_FILE)}"
+if [[ -f "$CF_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$CF_FILE"
+  set +a
+fi
+export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
+export CI=1 # no interactive prompts from wrangler
+
+NAME="$(conf WORKER_NAME)"
 PUBLIC_URL="$(conf PUBLIC_URL)"
 COMMIT="$(git rev-parse --short HEAD)"
 STATE=local/last-deploy
@@ -40,56 +46,55 @@ if [[ -f "$STATE" ]]; then
     if ! git diff --quiet "$prev" HEAD -- src/server/settings.ts; then
       echo "    ! settings changed (src/server/settings.ts) — doctor below lists anything to review"
     fi
+    if ! git diff --quiet "$prev" HEAD -- migrations; then
+      echo "    ! database migrations changed — they're applied below"
+    fi
   fi
 else
   echo "==> First deploy of $COMMIT"
 fi
 
-# 2. Dependencies
+# 2. Dependencies and configuration
 echo "==> bun install"
 bun install --frozen-lockfile
-
-# 3. Configuration
 echo "==> doctor"
 if ! bun scripts/config.ts doctor; then
   echo "Fix the problems above (bun run config set KEY VALUE), then re-run scripts/deploy.sh." >&2
   exit 1
 fi
 
-# 4. Backup
-echo "==> backup"
-bun scripts/backup.ts "$COMMIT"
+# 3. Build
+echo "==> build"
+bun scripts/build-web.ts
+CONFIG="$(bun scripts/config.ts wrangler-config)"
 
-# 5. systemd unit
-BUN="$(bun -e 'console.log(process.execPath)')"
-UNIT="/etc/systemd/system/$SERVICE.service"
-rendered="$(mktemp)"
-trap 'rm -f "$rendered"' EXIT
-sed -e "s|@USER@|$(id -un)|g" -e "s|@GROUP@|$(id -gn)|g" -e "s|@DIR@|$ROOT|g" \
-  -e "s|@BUN@|$BUN|g" -e "s|@PUBLIC_URL@|$PUBLIC_URL|g" deploy/kuakua.service.in | grep -v '^#' >"$rendered"
-if ! cmp -s "$rendered" "$UNIT" 2>/dev/null; then
-  echo "==> installing $UNIT"
-  sudo install -m 644 "$rendered" "$UNIT"
-  sudo systemctl daemon-reload
-  sudo systemctl enable "$SERVICE" >/dev/null 2>&1
+# 4. Database
+BOOKMARK="$(bunx wrangler d1 time-travel info "$NAME" --json -c "$CONFIG" 2>/dev/null | jq -r '.bookmark // empty' || true)"
+[[ -n "$BOOKMARK" ]] && echo "==> D1 restore point before this deploy: $BOOKMARK"
+echo "==> D1 migrations"
+bunx wrangler d1 migrations apply "$NAME" --remote -c "$CONFIG"
+
+# 5. Roster
+if [[ "$(bun -e 'import { directorySourceOf } from "./src/server/settings"; import { fileValues } from "./scripts/lib/env"; console.log(directorySourceOf(fileValues()))')" == "roster" ]]; then
+  echo "==> roster"
+  bun scripts/push-roster.ts
 fi
 
-# 6. Restart and wait for health
-echo "==> restarting $SERVICE"
-since="$(date '+%Y-%m-%d %H:%M:%S')"
-sudo systemctl restart "$SERVICE"
-for _ in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then
-    sleep 1
-    if systemctl is-active --quiet "$SERVICE"; then
-      echo "$COMMIT $(date -Iseconds)" >"$STATE"
-      sudo journalctl -u "$SERVICE" --since "$since" --no-pager -o cat | tail -n 5 | sed 's/^/    /'
-      echo "==> Deployed $COMMIT to $PUBLIC_URL (service $SERVICE, port $PORT)"
-      exit 0
-    fi
+# 6. Worker
+echo "==> wrangler deploy"
+SECRETS="$(bun scripts/config.ts secrets-file)"
+trap '[[ -n "${SECRETS:-}" ]] && rm -f "$SECRETS"' EXIT
+bunx wrangler deploy -c "$CONFIG" ${SECRETS:+--secrets-file "$SECRETS"}
+
+echo "==> waiting for $PUBLIC_URL to serve $COMMIT"
+for _ in $(seq 1 60); do
+  live="$(curl -fsS -o /dev/null -D - "$PUBLIC_URL/healthz" 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1) == "x-kuakua-version" {print $2}')"
+  if [[ "$live" == "$COMMIT" ]]; then
+    echo "$COMMIT $(date -Iseconds) ${BOOKMARK:-}" >"$STATE"
+    echo "==> Deployed $COMMIT to $PUBLIC_URL (Worker $NAME)"
+    exit 0
   fi
-  sleep 1
+  sleep 3
 done
-echo "!! $SERVICE did not become healthy. Recent log:" >&2
-sudo journalctl -u "$SERVICE" --since "$since" --no-pager -o cat | tail -n 40 >&2
+echo "!! $PUBLIC_URL/healthz isn't serving $COMMIT yet (got: ${live:-nothing}). Check: bunx wrangler tail -c $CONFIG" >&2
 exit 1

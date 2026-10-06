@@ -1,83 +1,87 @@
-import { existsSync, statSync } from "node:fs";
 import { config, larkEnabled } from "./config";
 import { db } from "./db";
 import { syncLark } from "./lark";
-import { syncRoster } from "./roster";
+import { rosterObject, syncRoster } from "./roster";
 
-// The people directory comes from one source per deployment (DIRECTORY_SOURCE):
-// the Lark contact directory, or a roster file kept next to the app.
+// The people directory comes from one source per deployment (DIRECTORY_SOURCE): the Lark
+// contact directory (synced daily by the cron trigger) or a roster file that
+// scripts/deploy.sh uploads to R2 (synced whenever it changes).
 
 export type SyncResult = { seen: number; active: number; avatarsUpdated: number; warnings: string[] };
 
 const log = (...args: unknown[]) => console.log("[directory]", ...args);
 const source = config.directory.source;
+// A run that hasn't finished after this long is considered dead.
+const STALE_MS = 15 * 60_000;
 
-export function directoryConfigured() {
-  return source === "lark" ? larkEnabled() : existsSync(config.directory.rosterFile);
+export async function directoryConfigured() {
+  return source === "lark" ? larkEnabled() : Boolean(await rosterObject());
 }
 
-let running: Promise<SyncResult> | null = null;
-export const syncRunning = () => running !== null;
+export async function syncRunning() {
+  return Boolean(
+    await db.get("SELECT 1 AS running FROM sync_runs WHERE finished_at IS NULL AND started_at > $stale", { stale: Date.now() - STALE_MS }),
+  );
+}
 
-export function syncDirectory(trigger: string) {
-  if (!directoryConfigured()) {
-    const why = source === "lark" ? "LARK_APP_ID / LARK_APP_SECRET not configured" : `roster file not found: ${config.directory.rosterFile}`;
-    return Promise.reject(new Error(why));
+// Runs a sync unless one is already running (returns null then). The run row doubles as
+// the lock, so concurrent requests and the cron can't sync twice.
+export async function syncDirectory(trigger: string): Promise<SyncResult | null> {
+  const ref = source === "roster" ? ((await rosterObject())?.etag ?? null) : null;
+  if (source === "lark" ? !larkEnabled() : !ref) {
+    throw new Error(source === "lark" ? "LARK_APP_ID / LARK_APP_SECRET not configured" : "no roster uploaded yet");
   }
-  running ??= run(trigger).finally(() => (running = null));
-  return running;
-}
-
-async function run(trigger: string) {
-  const res = db
-    .query("INSERT INTO sync_runs (trigger, started_at) VALUES ($trigger, $now)")
-    .run({ trigger: `${source}/${trigger}`, now: Date.now() });
-  const id = Number(res.lastInsertRowid);
+  const now = Date.now();
+  const run = await db.get<{ id: number }>(
+    `INSERT INTO sync_runs (trigger, started_at, source_ref)
+     SELECT $trigger, $now, $ref WHERE NOT EXISTS (SELECT 1 FROM sync_runs WHERE finished_at IS NULL AND started_at > $stale)
+     RETURNING id`,
+    { trigger: `${source}/${trigger}`, now, ref, stale: now - STALE_MS },
+  );
+  if (!run) return null;
   try {
     const r = source === "lark" ? await syncLark() : await syncRoster();
-    db.query(
+    await db.run(
       `UPDATE sync_runs SET finished_at = $now, ok = 1, users_seen = $seen, users_active = $active,
          avatars_updated = $avatars, warnings = $warnings
        WHERE id = $id`,
-    ).run({
-      now: Date.now(),
-      seen: r.seen,
-      active: r.active,
-      avatars: r.avatarsUpdated,
-      warnings: r.warnings.length ? JSON.stringify(r.warnings) : null,
-      id,
-    });
+      {
+        now: Date.now(),
+        seen: r.seen,
+        active: r.active,
+        avatars: r.avatarsUpdated,
+        warnings: r.warnings.length ? JSON.stringify(r.warnings) : null,
+        id: run.id,
+      },
+    );
     log(`${source} sync ok: ${r.seen} people (${r.active} active), ${r.avatarsUpdated} avatars updated`);
     for (const w of r.warnings) log("warning:", w);
     return r;
   } catch (e) {
     const message = (e as Error).message;
-    db.query("UPDATE sync_runs SET finished_at = $now, ok = 0, error = $error WHERE id = $id").run({ now: Date.now(), error: message, id });
+    await db.run("UPDATE sync_runs SET finished_at = $now, ok = 0, error = $error WHERE id = $id", {
+      now: Date.now(),
+      error: message,
+      id: run.id,
+    });
     log(`${source} sync failed:`, message);
     throw e;
   }
 }
 
-function lastRun(okOnly: boolean) {
-  return db
-    .query(`SELECT ok, started_at, finished_at FROM sync_runs WHERE trigger LIKE $prefix ${okOnly ? "AND ok = 1" : ""} ORDER BY id DESC LIMIT 1`)
-    .get({ prefix: `${source}/%` }) as { ok: number | null; started_at: number; finished_at: number | null } | null;
-}
-
-// Runs on startup and every minute: Lark every LARK_SYNC_INTERVAL_HOURS, the roster
-// whenever its file changes. A failed run is retried after 30 minutes (Lark) or once
-// the file changes again (roster).
-export function maybeSync() {
-  if (running || !directoryConfigured()) return;
-  const last = lastRun(false);
-  const lastOk = lastRun(true)?.finished_at ?? 0;
+// Lark: once a day from the cron trigger. Roster: whenever the uploaded file's etag differs
+// from the last run's (checked by the cron and, throttled, on page loads); a roster that
+// failed isn't retried until it changes again.
+export async function maybeSync(trigger: "schedule" | "request") {
   if (source === "lark") {
-    if (last && !last.ok && Date.now() - last.started_at < 30 * 60_000) return;
-    if (Date.now() - lastOk < config.lark.syncIntervalHours * 3600_000) return;
-  } else {
-    const changed = statSync(config.directory.rosterFile).mtimeMs;
-    if (last && !last.ok && last.started_at > changed) return;
-    if (lastOk > changed) return;
+    if (trigger === "schedule" && larkEnabled()) await syncDirectory(trigger);
+    return;
   }
-  syncDirectory("schedule").catch(() => {});
+  const roster = await rosterObject();
+  if (!roster) return;
+  const last = await db.get<{ source_ref: string | null }>(
+    "SELECT source_ref FROM sync_runs WHERE trigger LIKE 'roster/%' ORDER BY id DESC LIMIT 1",
+  );
+  if (last?.source_ref === roster.etag) return;
+  await syncDirectory(trigger);
 }

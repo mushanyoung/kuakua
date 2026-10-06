@@ -1,15 +1,23 @@
-// Seeds a throwaway demo database for local UI work. Never point this at production data:
-//   DATA_DIR=./data-demo bun scripts/seed-demo.ts
-import { config } from "../src/server/config";
+// Fills the local dev database (wrangler dev's D1 under .wrangler/state) with demo
+// people and posts: `bun run demo:seed`. Builds them in a scratch SQLite file with the D1
+// schema, then loads that into local D1. Never touches a deployed database.
+import { Database } from "bun:sqlite";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { exportRows } from "./lib/sqlite-export";
+import { values, REACTIONS } from "../src/shared/values";
 
-if (!config.dataDir.includes("demo")) {
-  console.error(`Refusing to seed ${config.dataDir}: DATA_DIR must contain "demo".`);
-  process.exit(1);
+const ROOT = resolve(import.meta.dir, "..");
+const scratch = mkdtempSync(join(tmpdir(), "kuakua-demo-"));
+const db = new Database(join(scratch, "demo.db"), { strict: true });
+for (const f of readdirSync(join(ROOT, "migrations")).filter((f) => f.endsWith(".sql")).sort()) {
+  db.exec(readFileSync(join(ROOT, "migrations", f), "utf8"));
 }
 
-const { db } = await import("../src/server/db");
-const { periodOf } = await import("../src/server/time");
-const { values, REACTIONS } = await import("../src/shared/values");
+// Same as the server's periodOf() for the default APP_TIMEZONE.
+const month = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit" });
+const periodOf = (ms: number) => month.format(new Date(ms)).slice(0, 7);
 
 const depts = [
   ["d-collect", "数据采集", "Data Collection"],
@@ -71,7 +79,6 @@ const messages = [
 const comments = ["+1，确实太强了！", "附议 👏", "这个必须夸", "学到了！", "So well deserved!", "respect 🙌", "感动哭了"];
 
 const now = Date.now();
-db.exec("DELETE FROM reactions; DELETE FROM comments; DELETE FROM post_recipients; DELETE FROM posts; DELETE FROM users; DELETE FROM departments; DELETE FROM sqlite_sequence;");
 for (const [id, name, en] of depts) {
   db.query("INSERT INTO departments (id, name, en_name, updated_at) VALUES ($id, $name, $en, $now)").run({ id, name, en, now });
 }
@@ -134,4 +141,15 @@ for (const at of times) {
   for (let k = 0; k < nReactions; k++) insertReaction.run({ post, user: pick(ids), emoji: pick(REACTIONS.slice(0, 6)), at: at + 1000 });
   if (rand() < 0.3) insertComment.run({ post, user: pick(ids), body: pick(comments), at: at + 5000 });
 }
-console.log(`seeded ${ids.length} people and 64 posts into ${config.dataDir}`);
+const { sql } = exportRows(db, { replace: true });
+const file = join(scratch, "demo.sql");
+writeFileSync(file, sql);
+db.close();
+const load = Bun.spawnSync(["bunx", "wrangler", "d1", "execute", "kuakua", "--local", "--file", file, "--yes"], {
+  cwd: ROOT,
+  stdout: "ignore",
+  stderr: "inherit",
+});
+rmSync(scratch, { recursive: true, force: true });
+if (load.exitCode !== 0) process.exit(1);
+console.log(`seeded ${ids.length} people and 64 posts into the local dev database`);

@@ -1,19 +1,18 @@
-import { mkdirSync } from "node:fs";
-import { rename } from "node:fs/promises";
-import { join } from "node:path";
-import { config } from "./config";
+import { env } from "cloudflare:workers";
 import { userRowById } from "./store";
 
-// Synced avatars live at <dataDir>/avatars/<userId>-240 and -640 (raw image bytes).
-export const avatarDir = join(config.dataDir, "avatars");
-mkdirSync(avatarDir, { recursive: true });
+// Avatars live in R2 (the FILES bucket). users.avatar_key names the 240px image; Lark
+// avatars also have a 640px one at the same key with "-640". Roster avatars are served
+// straight from where scripts/deploy.sh uploaded them (roster/...).
 
-export const avatarFile = (userId: number, size: "240" | "640") => join(avatarDir, `${userId}-${size}`);
+export async function putAvatar(key: string, bytes: Uint8Array) {
+  await env.FILES.put(key, bytes, { httpMetadata: { contentType: sniff(bytes) } });
+}
 
-export async function writeAvatar(userId: number, size: "240" | "640", bytes: ArrayBuffer | Uint8Array) {
-  const file = avatarFile(userId, size);
-  await Bun.write(`${file}.tmp`, bytes);
-  await rename(`${file}.tmp`, file);
+export async function shortHash(data: string | Uint8Array) {
+  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-1", bytes));
+  return [...digest.slice(0, 6)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 const GRADIENTS = [
@@ -55,15 +54,17 @@ export function sniff(bytes: Uint8Array) {
 }
 
 export async function serveAvatar(id: number, size: string | null, versioned: boolean) {
-  const row = userRowById(id);
+  const row = await userRowById(id);
   if (!row) return new Response("not found", { status: 404 });
   const cache = versioned ? "private, max-age=31536000, immutable" : "private, max-age=3600";
-  if (row.avatar_ver) {
-    for (const s of size === "640" ? (["640", "240"] as const) : (["240"] as const)) {
-      const file = Bun.file(avatarFile(id, s));
-      if (!(await file.exists())) continue;
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      return new Response(bytes, { headers: { "Content-Type": sniff(bytes), "Cache-Control": cache } });
+  if (row.avatar_ver && row.avatar_key) {
+    const big = row.avatar_key.endsWith("-240") ? row.avatar_key.replace(/-240$/, "-640") : null;
+    for (const key of size === "640" && big ? [big, row.avatar_key] : [row.avatar_key]) {
+      const obj = await env.FILES.get(key);
+      if (!obj) continue;
+      return new Response(obj.body, {
+        headers: { "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream", "Cache-Control": cache },
+      });
     }
   }
   return new Response(placeholder(id, row.name), {

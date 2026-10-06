@@ -1,9 +1,10 @@
-import { existsSync } from "node:fs";
-import { avatarFile, writeAvatar } from "./avatars";
+import { putAvatar, shortHash } from "./avatars";
 import { config, isAllowedEmail, larkNotifyEnabled } from "./config";
-import { db } from "./db";
+import { db, q } from "./db";
 import type { SyncResult } from "./directory";
 import { valueById } from "../shared/values";
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const log = (...args: unknown[]) => console.log("[lark]", ...args);
 
@@ -46,7 +47,7 @@ async function lark<T>(method: string, path: string, query?: Record<string, stri
     } catch (e) {
       // Timeouts and connection resets: retry like a 5xx.
       if (attempt < 5) {
-        await Bun.sleep(Math.min(8000, 500 * 2 ** attempt));
+        await sleep(Math.min(8000, 500 * 2 ** attempt));
         continue;
       }
       throw new Error(`${method} ${path} → ${(e as Error).message}`);
@@ -55,7 +56,7 @@ async function lark<T>(method: string, path: string, query?: Record<string, stri
     refresh = res.status === 401 || json.code === 99991661 || json.code === 99991663;
     const limited = res.status === 429 || json.code === 99991400;
     if ((limited || refresh || res.status >= 500) && attempt < 5) {
-      await Bun.sleep(Math.min(8000, 500 * 2 ** attempt));
+      await sleep(Math.min(8000, 500 * 2 ** attempt));
       continue;
     }
     if (json.code !== 0) throw new Error(`${method} ${path} → ${json.code} ${json.msg}`);
@@ -168,11 +169,15 @@ async function downloadAvatar(userId: number, u: LarkUser) {
     if (!url) continue;
     const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`avatar HTTP ${res.status}`);
-    await writeAvatar(userId, size, await res.arrayBuffer());
+    await putAvatar(`avatars/${userId}-${size}`, new Uint8Array(await res.arrayBuffer()));
   }
 }
 
-// Pulls the whole Lark contact directory into users/departments. Run via directory.syncDirectory().
+type Existing = { id: number; open_id: string | null; email: string | null; avatar_src: string | null; avatar_ver: string | null };
+
+// Pulls the whole Lark contact directory into users/departments (directory.syncDirectory()
+// runs it daily). Writes are a handful of set-based statements in one atomic batch, and
+// avatars are only downloaded when Lark's avatar URL changed since the last sync.
 export async function syncLark(): Promise<SyncResult> {
   const { departments, users } = await fetchDirectory();
   // Lark silently omits fields the app has no scope for; don't store nameless people.
@@ -183,93 +188,110 @@ export async function syncLark(): Promise<SyncResult> {
   }
   const now = Date.now();
 
-  db.transaction(() => {
-    const up = db.query(
-      `INSERT INTO departments (id, name, en_name, parent_id, updated_at) VALUES ($id, $name, $en, $parent, $now)
+  // Match each Lark user to an existing row by open_id, else adopt a row that signed in
+  // by email before the sync knew them. An email already taken by another row is skipped.
+  const existing = await db.all<Existing>("SELECT id, open_id, email, avatar_src, avatar_ver FROM users");
+  const byOpenId = new Map(existing.filter((r) => r.open_id).map((r) => [r.open_id!, r]));
+  const adoptable = new Map(existing.filter((r) => r.email && !r.open_id).map((r) => [r.email!, r]));
+  const emailOwner = new Map(existing.filter((r) => r.email).map((r) => [r.email!, r.id]));
+  const updates: Record<string, unknown>[] = [];
+  const inserts: Record<string, unknown>[] = [];
+  for (const u of list) {
+    const email = pickEmail(u);
+    let row = byOpenId.get(u.open_id);
+    if (!row && email && adoptable.has(email)) (row = adoptable.get(email)), adoptable.delete(email);
+    const owner = email ? emailOwner.get(email) : undefined;
+    const safeEmail = email && (owner === undefined || owner === row?.id) ? email : (row?.email ?? null);
+    if (safeEmail) emailOwner.set(safeEmail, row?.id ?? -1);
+    const fields = {
+      open_id: u.open_id,
+      email: safeEmail,
+      name: u.name || u.en_name || email?.split("@")[0] || "?",
+      en_name: u.en_name || null,
+      dept_id: primaryDept(u),
+      job_title: u.job_title || null,
+      active: u.status?.is_resigned || u.status?.is_exited || u.status?.is_frozen ? 0 : 1,
+      joined_at: u.join_time ? u.join_time * 1000 : null,
+      leader_open_id: u.leader_user_id || null,
+    };
+    if (row) updates.push({ id: row.id, ...fields });
+    else inserts.push(fields);
+  }
+
+  const field = (name: string) => `json_extract(value, '$.${name}')`;
+  const columns = ["open_id", "email", "name", "en_name", "dept_id", "job_title", "active", "joined_at", "leader_open_id"];
+  await db.batch([
+    q(
+      `INSERT INTO departments (id, name, en_name, parent_id, updated_at)
+       SELECT ${field("id")}, ${field("name")}, ${field("en")}, ${field("parent")}, $now FROM json_each($depts) WHERE true
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, en_name = excluded.en_name,
          parent_id = excluded.parent_id, updated_at = excluded.updated_at`,
-    );
-    for (const [id, d] of departments) {
-      up.run({ id, name: d.name, en: d.i18n_name?.en_us || null, parent: d.parent_department_id ?? null, now });
-    }
-  })();
-
-  const avatarJobs: { id: number; user: LarkUser; ver: string }[] = [];
-  const byOpenId = db.query("SELECT id, email, avatar_src, avatar_ver FROM users WHERE open_id = $openId");
-  const byEmail = db.query("SELECT id, email, avatar_src, avatar_ver FROM users WHERE email = $email AND open_id IS NULL");
-  const emailTaken = db.query("SELECT id FROM users WHERE email = $email AND id != $id");
-  type Existing = { id: number; email: string | null; avatar_src: string | null; avatar_ver: string | null };
-
-  db.transaction(() => {
-    for (const u of users.values()) {
-      const email = pickEmail(u);
-      const active = u.status?.is_resigned || u.status?.is_exited || u.status?.is_frozen ? 0 : 1;
-      const fields = {
-        openId: u.open_id,
-        name: u.name || u.en_name || email?.split("@")[0] || "?",
-        en: u.en_name || null,
-        dept: primaryDept(u),
-        title: u.job_title || null,
-        active,
-        joined: u.join_time ? u.join_time * 1000 : null,
-        leader: u.leader_user_id || null,
+      {
         now,
-      };
-      let row = (byOpenId.get({ openId: u.open_id }) ?? (email ? byEmail.get({ email }) : null)) as Existing | null;
-      const safeEmail = email && !(emailTaken.get({ email, id: row?.id ?? -1 }) as unknown) ? email : (row?.email ?? null);
-      if (row) {
-        db.query(
-          `UPDATE users SET open_id = $openId, email = $email, name = $name, en_name = $en, dept_id = $dept,
-             job_title = $title, active = $active, joined_at = $joined, leader_open_id = $leader,
-             leader_email = NULL, source = 'lark', updated_at = $now
-           WHERE id = $id`,
-        ).run({ ...fields, email: safeEmail, id: row.id });
-      } else {
-        const res = db
-          .query(
-            `INSERT INTO users (open_id, email, name, en_name, dept_id, job_title, active, joined_at, leader_open_id,
-                                source, created_at, updated_at)
-             VALUES ($openId, $email, $name, $en, $dept, $title, $active, $joined, $leader, 'lark', $now, $now)`,
-          )
-          .run({ ...fields, email: safeEmail });
-        row = { id: Number(res.lastInsertRowid), email: safeEmail, avatar_src: null, avatar_ver: null };
-      }
-      const src = u.avatar?.avatar_240 ?? null;
-      if (!src) {
-        if (row.avatar_ver) db.query("UPDATE users SET avatar_src = NULL, avatar_ver = NULL WHERE id = $id").run({ id: row.id });
-      } else if (src !== row.avatar_src || !existsSync(avatarFile(row.id, "240"))) {
-        avatarJobs.push({ id: row.id, user: u, ver: Bun.hash(src).toString(36).slice(0, 10) });
-      }
-    }
+        depts: JSON.stringify(
+          [...departments].map(([id, d]) => ({ id, name: d.name, en: d.i18n_name?.en_us || null, parent: d.parent_department_id ?? null })),
+        ),
+      },
+    ),
+    q(
+      `UPDATE users SET ${columns.map((c) => `${c} = j.${c}`).join(", ")}, leader_email = NULL, source = 'lark', updated_at = $now
+       FROM (SELECT ${field("id")} AS id, ${columns.map((c) => `${field(c)} AS ${c}`).join(", ")} FROM json_each($rows)) AS j
+       WHERE users.id = j.id`,
+      { now, rows: JSON.stringify(updates) },
+    ),
+    q(
+      `INSERT INTO users (${columns.join(", ")}, source, created_at, updated_at)
+       SELECT ${columns.map(field).join(", ")}, 'lark', $now, $now FROM json_each($rows)`,
+      { now, rows: JSON.stringify(inserts) },
+    ),
     // People who left (or fell out of the app's contact scope) stay in history but
     // disappear from pickers. Guard against a broken sync deactivating everyone.
-    if (users.size > 0) {
-      db.query(
-        `UPDATE users SET active = 0, updated_at = $now
-         WHERE source = 'lark' AND active = 1 AND open_id NOT IN (SELECT value FROM json_each($seen))`,
-      ).run({ now, seen: JSON.stringify([...users.keys()]) });
-    }
-  })();
+    q(
+      `UPDATE users SET active = 0, updated_at = $now
+       WHERE source = 'lark' AND active = 1 AND $count > 0 AND open_id NOT IN (SELECT value FROM json_each($seen))`,
+      { now, count: users.size, seen: JSON.stringify([...users.keys()]) },
+    ),
+  ]);
 
-  let avatarsUpdated = 0;
-  const setAvatar = db.query("UPDATE users SET avatar_src = $src, avatar_ver = $ver WHERE id = $id");
-  const queue = [...avatarJobs];
+  const rows = await db.all<Existing>(
+    "SELECT id, open_id, email, avatar_src, avatar_ver FROM users WHERE open_id IN (SELECT value FROM json_each($seen))",
+    { seen: JSON.stringify([...users.keys()]) },
+  );
+  const jobs: { id: number; user: LarkUser; src: string }[] = [];
+  const cleared: number[] = [];
+  for (const row of rows) {
+    const src = users.get(row.open_id!)?.avatar?.avatar_240;
+    if (!src) row.avatar_ver && cleared.push(row.id);
+    else if (src !== row.avatar_src || !row.avatar_ver) jobs.push({ id: row.id, user: users.get(row.open_id!)!, src });
+  }
+  const done: { id: number; src: string; ver: string; key: string }[] = [];
+  const queue = [...jobs];
   await Promise.all(
     Array.from({ length: 6 }, async () => {
       for (let job = queue.shift(); job; job = queue.shift()) {
         try {
           await downloadAvatar(job.id, job.user);
-          setAvatar.run({ src: job.user.avatar!.avatar_240!, ver: job.ver, id: job.id });
-          avatarsUpdated++;
+          done.push({ id: job.id, src: job.src, ver: await shortHash(job.src), key: `avatars/${job.id}-240` });
         } catch (e) {
           log("avatar failed", job.user.open_id, (e as Error).message);
         }
       }
     }),
   );
+  await db.batch([
+    q(
+      `UPDATE users SET avatar_src = j.src, avatar_ver = j.ver, avatar_key = j.key
+       FROM (SELECT ${field("id")} AS id, ${field("src")} AS src, ${field("ver")} AS ver, ${field("key")} AS key FROM json_each($done)) AS j
+       WHERE users.id = j.id`,
+      { done: JSON.stringify(done) },
+    ),
+    q("UPDATE users SET avatar_src = NULL, avatar_ver = NULL, avatar_key = NULL WHERE id IN (SELECT value FROM json_each($ids))", {
+      ids: JSON.stringify(cleared),
+    }),
+  ]);
 
-  const activeCount = [...users.values()].filter((u) => !(u.status?.is_resigned || u.status?.is_exited || u.status?.is_frozen)).length;
-  return { seen: users.size, active: activeCount, avatarsUpdated, warnings: [] };
+  const activeCount = list.filter((u) => !(u.status?.is_resigned || u.status?.is_exited || u.status?.is_frozen)).length;
+  return { seen: users.size, active: activeCount, avatarsUpdated: done.length, warnings: [] };
 }
 
 // ---------------------------------------------------------------- notifications
@@ -361,15 +383,10 @@ async function send(receiveIdType: "open_id" | "chat_id", receiveId: string, con
 export async function notifyPost(post: NotifyPost, senderRemaining?: number) {
   if (!larkNotifyEnabled()) return;
   const { senderId, recipientIds, ccIds } = post;
-  const people = db
-    .query("SELECT id, name, en_name, open_id, lang FROM users WHERE id IN (SELECT value FROM json_each($ids))")
-    .all({ ids: JSON.stringify([senderId, ...recipientIds, ...ccIds]) }) as {
-    id: number;
-    name: string;
-    en_name: string | null;
-    open_id: string | null;
-    lang: string | null;
-  }[];
+  const people = await db.all<{ id: number; name: string; en_name: string | null; open_id: string | null; lang: string | null }>(
+    "SELECT id, name, en_name, open_id, lang FROM users WHERE id IN (SELECT value FROM json_each($ids))",
+    { ids: JSON.stringify([senderId, ...recipientIds, ...ccIds]) },
+  );
   const byId = new Map(people.map((p) => [p.id, p]));
   const sender = byId.get(senderId);
   if (!sender) return;
