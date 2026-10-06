@@ -87,8 +87,11 @@ trap '[[ -n "${SECRETS:-}" ]] && rm -f "$SECRETS"' EXIT
 bunx wrangler deploy -c "$CONFIG" ${SECRETS:+--secrets-file "$SECRETS"}
 
 echo "==> waiting for $PUBLIC_URL to serve $COMMIT"
+# Resolved through Cloudflare's DNS-over-HTTPS: right after a hostname moves to the Worker, local
+# resolvers may still be caching its old (or missing) record.
 for _ in $(seq 1 60); do
-  live="$(curl -fsS -o /dev/null -D - "$PUBLIC_URL/healthz" 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1) == "x-kuakua-version" {print $2}')"
+  live="$(curl -fsS --doh-url https://cloudflare-dns.com/dns-query -o /dev/null -D - "$PUBLIC_URL/healthz" 2>/dev/null |
+    tr -d '\r' | awk -F': ' 'tolower($1) == "x-kuakua-version" {print $2}' || true)"
   if [[ "$live" == "$COMMIT" ]]; then
     echo "$COMMIT $(date -Iseconds) ${BOOKMARK:-}" >"$STATE"
     echo "==> Deployed $COMMIT to $PUBLIC_URL (Worker $NAME)"
