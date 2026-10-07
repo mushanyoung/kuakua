@@ -17,7 +17,7 @@ function get(key: string) {
 }
 
 // Vars that scripts/deploy.sh derives rather than copies from .env.production.
-const derived = (key: "ENVIRONMENT" | "APP_VERSION" | "VALUES_JSON") => {
+const derived = (key: "ENVIRONMENT" | "VALUES_JSON") => {
   const v = vars[key];
   return typeof v === "string" ? v : "";
 };
@@ -42,7 +42,6 @@ if (directorySource !== "lark" && directorySource !== "roster") {
 
 export const config = {
   production: derived("ENVIRONMENT") === "production",
-  version: derived("APP_VERSION") || "dev",
   publicUrl: get("PUBLIC_URL").replace(/\/$/, ""),
   timezone: get("APP_TIMEZONE"),
 

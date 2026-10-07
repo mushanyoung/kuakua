@@ -8,7 +8,7 @@
 #   3. builds the web app and writes local/wrangler.json from .env.production
 #   4. notes a D1 Time Travel bookmark (restore point), then applies D1 migrations
 #   5. uploads the roster and its avatars (DIRECTORY_SOURCE=roster)
-#   6. deploys the Worker with its secrets, and waits until https://<host>/healthz runs the new code
+#   6. deploys the Worker with its secrets and records the successful deployment
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -86,18 +86,5 @@ SECRETS="$(bun scripts/config.ts secrets-file)"
 trap '[[ -n "${SECRETS:-}" ]] && rm -f "$SECRETS"' EXIT
 bunx wrangler deploy -c "$CONFIG" ${SECRETS:+--secrets-file "$SECRETS"}
 
-echo "==> waiting for $PUBLIC_URL to serve $COMMIT"
-# Resolved through Cloudflare's DNS-over-HTTPS: right after a hostname moves to the Worker, local
-# resolvers may still be caching its old (or missing) record.
-for _ in $(seq 1 60); do
-  live="$(curl -fsS --doh-url https://cloudflare-dns.com/dns-query -o /dev/null -D - "$PUBLIC_URL/healthz" 2>/dev/null |
-    tr -d '\r' | awk -F': ' 'tolower($1) == "x-kuakua-version" {print $2}' || true)"
-  if [[ "$live" == "$COMMIT" ]]; then
-    echo "$COMMIT $(date -Iseconds) ${BOOKMARK:-}" >"$STATE"
-    echo "==> Deployed $COMMIT to $PUBLIC_URL (Worker $NAME)"
-    exit 0
-  fi
-  sleep 3
-done
-echo "!! $PUBLIC_URL/healthz isn't serving $COMMIT yet (got: ${live:-nothing}). Check: bunx wrangler tail -c $CONFIG" >&2
-exit 1
+echo "$COMMIT $(date -Iseconds) ${BOOKMARK:-}" >"$STATE"
+echo "==> Deployed $COMMIT to $PUBLIC_URL (Worker $NAME)"

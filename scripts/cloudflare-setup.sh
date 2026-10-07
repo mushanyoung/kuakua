@@ -5,7 +5,7 @@
 #   3. R2 bucket <WORKER_NAME>-files        (avatars and the uploaded roster)
 #   4. an Access policy "kuakua: <hostname>" allowing ADMIN_EMAILS, ALLOWED_EMAIL_DOMAINS and,
 #      for DIRECTORY_SOURCE=roster, everyone in the roster (re-run after changing any of those)
-#   5. the Access app for <hostname> (created with that policy) and a public bypass for /healthz;
+#   5. the Access app for <hostname> (created with that policy);
 #      an existing app that uses other policies is left as it is
 #   6. writes CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD and D1_DATABASE_ID into .env.production
 # The Worker and its Custom Domain are created by scripts/deploy.sh. A Custom Domain can't take
@@ -125,13 +125,6 @@ else
   else
     echo "access: app for $HOST exists $(jq -r .id <<<"$app")" >&2
   fi
-fi
-if ! jq -e --arg d "$HOST/healthz" '.result[] | select(.domain == $d)' <<<"$apps" >/dev/null; then
-  body="$(jq -n --arg d "$HOST/healthz" '{
-    name: "kuakua healthz", type: "self_hosted", domain: $d, app_launcher_visible: false,
-    policies: [{name: "public healthz", decision: "bypass", include: [{everyone: {}}]}]
-  }')"
-  cf POST "$ACCT/access/apps" "$body" >/dev/null && echo "access: created /healthz bypass" >&2
 fi
 
 # DNS: a Custom Domain needs the hostname free of other records.

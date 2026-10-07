@@ -10,7 +10,7 @@ import { isPeriod, periodOf, type Range } from "./time";
 import { values } from "../shared/values";
 
 // Cloudflare Worker entry. Static files (the web app, fonts) are served from ./dist by
-// Workers Static Assets; only /api/*, /avatars/* and /healthz reach this code
+// Workers Static Assets; only /api/* and /avatars/* reach this code
 // (assets.run_worker_first in the wrangler config).
 
 type Ctx = { req: Request; url: URL; params: Record<string, string>; viewer: Viewer; ctx: ExecutionContext };
@@ -234,8 +234,6 @@ async function handleApi(req: Request, url: URL, ctx: ExecutionContext) {
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
-    // Public (Access bypass); the version header lets scripts/deploy.sh see the new code is live.
-    if (url.pathname === "/healthz") return new Response("ok", { headers: { "X-Kuakua-Version": config.version } });
     if (url.pathname.startsWith("/api/")) return handleApi(req, url, ctx);
     const avatar = /^\/avatars\/(\d+)$/.exec(url.pathname);
     if (avatar && req.method === "GET") {

@@ -164,7 +164,6 @@ function wranglerConfig() {
   const valuesFile = effective(env, "VALUES_FILE");
   const vars: Record<string, string> = {
     ENVIRONMENT: "production",
-    APP_VERSION: Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: ROOT }).stdout.toString().trim(),
     VALUES_JSON: valuesFile ? JSON.stringify(parseValues(JSON.parse(readFileSync(resolve(ROOT, valuesFile), "utf8")))) : "",
   };
   for (const s of SETTINGS) {
@@ -183,7 +182,7 @@ function wranglerConfig() {
       directory: "../dist",
       binding: "ASSETS",
       not_found_handling: "single-page-application",
-      run_worker_first: ["/api/*", "/avatars/*", "/healthz"],
+      run_worker_first: ["/api/*", "/avatars/*"],
     },
     d1_databases: [{ binding: "DB", database_name: name, database_id: effective(env, "D1_DATABASE_ID"), migrations_dir: "../migrations" }],
     r2_buckets: [{ binding: "FILES", bucket_name: `${name}-files` }],

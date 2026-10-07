@@ -10,7 +10,7 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/avatars/*", "/healthz"]
+    "run_worker_first": ["/api/*", "/avatars/*"]
   },
   "d1_databases": [{ "binding": "DB", "database_name": "kuakua", "database_id": "local-dev", "migrations_dir": "migrations" }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "kuakua-files" }],
@@ -19,7 +19,6 @@
   "triggers": { "crons": ["0 19 * * *"] },
   "vars": {
     "ENVIRONMENT": "development",
-    "APP_VERSION": "dev",
     "PUBLIC_URL": "http://127.0.0.1:4381",
     "DEV_AUTH_EMAIL": "mushan@example.com",
     "ADMIN_EMAILS": "mushan@example.com",

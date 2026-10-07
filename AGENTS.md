@@ -115,7 +115,7 @@ bun run doctor        # 必须没有 ✗
 ./scripts/deploy.sh
 ```
 
-脚本最后会等到 `https://<hostname>/healthz` 跑的是这次的版本才算成功。让管理员打开网站登录：管理页的"名单同步 / Lark 通讯录同步"显示成功、人数对得上（Lark 模式可点"立即同步"，不用等到夜里）。
+Wrangler 成功发布 Worker 后，脚本会记录本次部署。让管理员打开网站登录验证：管理页的"名单同步 / Lark 通讯录同步"显示成功、人数对得上（Lark 模式可点"立即同步"，不用等到夜里）。
 
 ## 任务 B：升级（拉了新代码之后）
 
@@ -129,7 +129,7 @@ bun run doctor
 - "Not in the config file yet" 里有新出现的项：新版本加的可选配置。向运维人员说明它是什么、默认值是什么，按他们的选择 `config set`（保留默认也写一次）。
 - 如果改了 `ADMIN_EMAILS`、`ALLOWED_EMAIL_DOMAINS`、名单里的邮箱或 `PUBLIC_URL`：重跑 `./scripts/cloudflare-setup.sh`。
 
-然后 `./scripts/deploy.sh`。它会先列出自上次部署以来的提交（读一下，告诉运维人员这次更新了什么），再装依赖、体检、打包、记下数据库还原点、迁移数据库结构、上传名单、部署并确认新版本已上线。
+然后 `./scripts/deploy.sh`。它会先列出自上次部署以来的提交（读一下，告诉运维人员这次更新了什么），再装依赖、体检、打包、记下数据库还原点、迁移数据库结构、上传名单、发布 Worker 并记录本次部署。
 
 ## 任务 C：日常改配置
 
