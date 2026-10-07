@@ -141,7 +141,7 @@ for (const at of times) {
   for (let k = 0; k < nReactions; k++) insertReaction.run({ post, user: pick(ids), emoji: pick(REACTIONS.slice(0, 6)), at: at + 1000 });
   if (rand() < 0.3) insertComment.run({ post, user: pick(ids), body: pick(comments), at: at + 5000 });
 }
-const { sql } = exportRows(db, { replace: true });
+const sql = exportRows(db);
 const file = join(scratch, "demo.sql");
 writeFileSync(file, sql);
 db.close();

@@ -45,7 +45,7 @@
   - `directory.ts` 名单同步调度；`roster.ts` / `roster-file.ts` 名单；`lark.ts` Lark 通讯录同步和通知；`avatars.ts` R2 头像
 - `src/web/` React 前端，部署时由 `scripts/build-web.ts` 打包到 `dist/`；字体自托管（`/fonts/*`，大陆可访问）
 - `src/shared/values.ts` 品质标签和表情回应，前后端共用
-- `scripts/` `config.ts`（`bun run doctor` / `bun run config`）、`deploy.sh`、`cloudflare-setup.sh`、`push-roster.ts`、`import-sqlite.ts`（从旧的本机部署迁移数据）
+- `scripts/` `config.ts`（`bun run doctor` / `bun run config`）、`deploy.sh`、`cloudflare-setup.sh`、`push-roster.ts`、`seed-demo.ts`（本地开发演示数据）
 - `deploy/` 名单和品质标签的示例
 
 ## 常用命令

@@ -5,7 +5,7 @@ data-*/
 .env
 .env.*
 !.env.example
-# deployment-local files: roster, avatars, values, deploy state, tunnel token
+# deployment-local files: roster, avatars, values, deploy state
 local/
 *.log
 .wrangler/

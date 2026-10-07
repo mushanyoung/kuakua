@@ -8,10 +8,8 @@
 #   5. the Access app for <hostname> (created with that policy);
 #      an existing app that uses other policies is left as it is
 #   6. writes CF_ACCESS_TEAM_DOMAIN, CF_ACCESS_AUD and D1_DATABASE_ID into .env.production
-# The Worker and its Custom Domain are created by scripts/deploy.sh. A Custom Domain can't take
-# a hostname that still has a DNS record (e.g. the CNAME of an old tunnel setup): this script
-# reports it, and with --replace-dns deletes it — the old site is offline from then until
-# scripts/deploy.sh finishes.
+# The Worker and its Custom Domain are created by scripts/deploy.sh. This script reports
+# conflicting DNS records so they can be resolved before deployment.
 #
 # With EMAIL_NOTIFY=1 it also checks that EMAIL_FROM's domain is onboarded to Cloudflare Email
 # Sending, and onboards it with --enable-email (that adds DNS records; see below).
@@ -22,13 +20,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REPLACE_DNS=0
 ENABLE_EMAIL=0
 for arg in "$@"; do
   case "$arg" in
-    --replace-dns) REPLACE_DNS=1 ;;
     --enable-email) ENABLE_EMAIL=1 ;;
-    *) echo "unknown option $arg (expected --replace-dns, --enable-email)" >&2; exit 1 ;;
+    *) echo "unknown option $arg (expected --enable-email)" >&2; exit 1 ;;
   esac
 done
 
@@ -95,7 +91,7 @@ else
 fi
 
 # 4 + 5. Access app for the hostname, guarded by a policy this script manages. An app that
-# already exists with other policies (set up by hand or by an older version) is left alone.
+# already exists with policies managed outside this script is left alone.
 apps="$(cf GET "$ACCT/access/apps?per_page=500")"
 app="$(jq -c --arg d "$HOST" '[.result[] | select(.domain == $d)][0] // empty' <<<"$apps")"
 policy_id="$(cf GET "$ACCT/access/policies?per_page=500" | jq -r --arg n "$POLICY_NAME" '[.result[] | select(.name == $n)][0].id // empty')"
@@ -143,13 +139,9 @@ ours="$(jq -r --arg s "$NAME" '[.result[]? | select(.service == $s)] | length' <
 if [[ "$ours" == "0" ]]; then
   records="$(cf GET "$API/zones/$zone/dns_records?name=$HOST" | jq -c '[.result[] | {id, type, content}]')"
   if [[ "$(jq length <<<"$records")" -gt 0 ]]; then
-    if [[ "$REPLACE_DNS" == 1 ]]; then
-      for id in $(jq -r '.[].id' <<<"$records"); do cf DELETE "$API/zones/$zone/dns_records/$id" >/dev/null; done
-      echo "dns: deleted $(jq -c 'map("\(.type) \(.content)")' <<<"$records") for $HOST — run scripts/deploy.sh now" >&2
-    else
-      echo "dns: $HOST still has $(jq -c 'map("\(.type) \(.content)")' <<<"$records"); the Worker can't take it until that's" >&2
-      echo "     removed. When you're ready to switch, re-run with --replace-dns, then scripts/deploy.sh." >&2
-    fi
+    echo "dns: $HOST has conflicting records: $(jq -c 'map("\(.type) \(.content)")' <<<"$records")" >&2
+    echo "     Resolve them in Cloudflare DNS, then re-run scripts/cloudflare-setup.sh." >&2
+    exit 1
   fi
 fi
 

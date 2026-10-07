@@ -92,7 +92,7 @@ CSV，第一行是表头，列顺序随意，只有 `email`、`name` 必填。�
 ./scripts/cloudflare-setup.sh
 ```
 
-它会建/复用 D1、R2、Access 策略和应用，并把 `CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`、`D1_DATABASE_ID` 写进 `.env.production`。如果它说 hostname 上还有别的 DNS 记录，那条记录会挡住 Worker；确认可以替换后用 `--replace-dns` 重跑。
+它会建/复用 D1、R2、Access 策略和应用，并把 `CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`、`D1_DATABASE_ID` 写进 `.env.production`。如果 hostname 上有冲突的 DNS 记录，脚本会停止；先在 Cloudflare DNS 处理这些记录，再重跑。
 
 ### 邮件通知（可选，`EMAIL_NOTIFY=1`）
 
@@ -140,22 +140,6 @@ bun run doctor
 | 开 / 关邮件通知 | `config set EMAIL_NOTIFY 1`（及 `EMAIL_FROM`）→ `./scripts/cloudflare-setup.sh` 检查发信域名 → `./scripts/deploy.sh` → 管理页发测试邮件 |
 | 改品质标签 | 改 `VALUES_FILE` 指向的文件 → `./scripts/deploy.sh`。已用过的标签 id 不要删改，否则旧帖子上的标签不再显示 |
 | 换域名 | `config set PUBLIC_URL ...` → `./scripts/cloudflare-setup.sh` → `./scripts/deploy.sh` |
-
-## 从旧的"本机部署"迁过来（一次性）
-
-旧版本在一台机器上用 systemd + Cloudflare Tunnel 运行，数据在 `DATA_DIR`（默认 `./data`）里的 SQLite 和头像文件夹。在那台机器上：
-
-1. `git pull`，`bun install`，按 `bun run doctor` 的提示补新配置（`WORKER_NAME`、`DATA_LOCATION`、`SYNC_CRON`、`CLOUDFLARE_ENV_FILE`…），`unset` 不再用的 `PORT`、`HOST`、`DATA_DIR`、`SERVICE_NAME`、`LARK_SYNC_INTERVAL_HOURS`。
-2. 先用一个**测试地址**验证：`config set PUBLIC_URL https://<测试 hostname>` → `./scripts/cloudflare-setup.sh` → `bun scripts/import-sqlite.ts data/kuakua.db` → `./scripts/deploy.sh`，请人登录测试地址看数据是否完整。
-3. 切换正式地址：
-   ```bash
-   sudo systemctl stop kuakua                          # 旧站停止写入
-   bun run config set PUBLIC_URL https://<正式 hostname>
-   bun scripts/import-sqlite.ts data/kuakua.db          # 用最新数据覆盖 D1
-   ./scripts/cloudflare-setup.sh --replace-dns          # 删掉指向 tunnel 的 CNAME
-   ./scripts/deploy.sh                                  # Worker 接管正式地址
-   ```
-   确认正式地址正常后：`sudo systemctl disable kuakua`；tunnel 里这个 hostname 的路由可以删掉。旧数据目录保留作备份。
 
 ## 回滚与排障
 
