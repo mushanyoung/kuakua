@@ -18,11 +18,11 @@
   object-fit: cover;
   border-radius: 50%;
 }
-.avatar.ring {
+.avatar.avatar-ring {
   padding: 2px;
   background: var(--grad-warm);
 }
-.avatar.ring img {
+.avatar.avatar-ring img {
   border: 2px solid var(--bg);
 }
 .avatar.more {

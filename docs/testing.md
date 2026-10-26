@@ -22,6 +22,8 @@ pnpm run check
 | `pnpm run test:e2e`         | Chromium 桌面和移动视口：键盘选人并发送、详情深链接、表情、评论与删除；Bonus 校验和额度返还；秘密夸与抄送可见性；头像上传恢复及双语偏好；管理员 CSV 导出 |
 | `pnpm run build`            | esbuild + Tailwind 网页生产资源，以及 Wrangler `--dry-run --minify` Worker 打包                                                                          |
 
+头像布局回归使用生产构建后的真实页面，验证自己和同事的详情页：桌面头像为 132px，移动端为 104px，导航头像保持各自尺寸，积分圆环仍填满 88px 容器。断言图片加载后的实际尺寸，防止共享类名覆盖尺寸后撑开页面。
+
 核心规则无须模拟数据库即可测试；集成与浏览器测试使用真实 Worker 和隔离 D1/R2，只替代 Lark 等外部服务。固定时钟入口仅用于集成测试，稳定复现同毫秒请求，生产入口不包含它。浏览器测试用本地模拟身份，不验证线上 Access 身份提供方。网络登录和真实通知在部署后按部署指南验收。
 
 每个测试独立清理数据，harness 结束时关闭。e2e 不依赖开发者的 `.wrangler/state`，不启动现有 dev server。失败不得通过 skip、only、放宽断言或增加重试隐藏；修复行为或测试自身的错误。Playwright 开启 `forbidOnly`，`retries: 0`。

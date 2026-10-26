@@ -89,6 +89,31 @@ test("private kudos reaches recipient and CC but stays hidden from another colle
   await expect(page.locator("article.post")).toHaveCount(0);
 });
 
+test("profile and navigation avatar sizes remain bounded on own and colleague profiles", async ({ page, isMobile }) => {
+  for (const id of [2, 3]) {
+    await page.goto(`/u/${id}`);
+    const avatar = page.locator(".profile-avatar");
+    await expect(avatar).toBeVisible();
+    await avatar.locator("img").evaluate((img: HTMLImageElement) => img.decode());
+    const profileSize = isMobile ? "104px" : "132px";
+    await expect(avatar).toHaveCSS("width", profileSize);
+    await expect(avatar).toHaveCSS("height", profileSize);
+    await expect(page.locator(".profile-id h1")).toBeInViewport();
+
+    const navigationAvatar = page.locator(isMobile ? ".tabbar .avatar" : ".nav-me .avatar");
+    const navigationSize = isMobile ? "24px" : "34px";
+    await expect(navigationAvatar).toBeVisible();
+    await expect(navigationAvatar).toHaveCSS("width", navigationSize);
+    await expect(navigationAvatar).toHaveCSS("height", navigationSize);
+
+    if (id === 2 && !isMobile) {
+      const allowance = page.locator(".allowance .ring-wrap svg");
+      await expect(allowance).toHaveCSS("width", "88px");
+      await expect(allowance).toHaveCSS("height", "88px");
+    }
+  }
+});
+
 test("profile avatar upload and restore persist; language preference survives reload", async ({ page }) => {
   await page.goto("/u/2");
   const avatar = page.locator(".profile-avatar img");

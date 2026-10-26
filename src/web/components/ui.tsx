@@ -77,7 +77,7 @@ export function Avatar({
 }) {
   const { name } = useApp();
   const img = (
-    <span className={`avatar ${ring ? "ring" : ""} ${className}`} style={{ "--avatar-size": `${size}px` } as CSSProperties}>
+    <span className={`avatar ${ring ? "avatar-ring" : ""} ${className}`} style={{ "--avatar-size": `${size}px` } as CSSProperties}>
       {user && <img src={avatarSrc(user, size > 88 ? 640 : 240)} alt="" loading="lazy" draggable={false} />}
     </span>
   );

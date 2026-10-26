@@ -33,4 +33,4 @@ pnpm run dev
 
 ## 格式与样式
 
-`pnpm run format:check`、`pnpm run lint` 不得有警告或错误，使用 `pnpm run format` / `pnpm run lint:fix` 修复。主题分布在 `src/web/styles/`，由入口 CSS 按原有顺序导入；通用布局使用 Tailwind。头像的行内大小通过 CSS 变量提供，响应式样式可正常覆盖。原生 dialog 提供焦点约束和 Escape 关闭，人员选择器支持键盘选择。
+`pnpm run format:check`、`pnpm run lint` 不得有警告或错误，使用 `pnpm run format` / `pnpm run lint:fix` 修复。主题分布在 `src/web/styles/`，由入口 CSS 按原有顺序导入；通用布局使用 Tailwind。头像的行内大小通过 CSS 变量提供，响应式样式可正常覆盖。组件样式使用明确前缀：头像描边为 `avatar-ring`，积分圆环为 `allowance-ring`；两者曾共用 `.ring`，导致圆环的百分比尺寸覆盖头像尺寸，也与 Tailwind 的同名工具类冲突。原生 dialog 提供焦点约束和 Escape 关闭，人员选择器支持键盘选择。

@@ -110,7 +110,7 @@ export function AllowanceRing({ remaining, total }: { remaining: number; total: 
   const c = 2 * Math.PI * r;
   const pct = total ? remaining / total : 0;
   return (
-    <svg className="ring" viewBox="0 0 84 84" aria-hidden="true">
+    <svg className="allowance-ring" viewBox="0 0 84 84" aria-hidden="true">
       <defs>
         <linearGradient id="ring-g" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#FF6B8B" />
