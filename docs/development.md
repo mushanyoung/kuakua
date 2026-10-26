@@ -20,7 +20,9 @@ pnpm run dev
 
 ## Cloudflare 工具链
 
-固定使用 `cf` 1.0.0-beta.21、Wrangler 4.148.0 和配置适配器 `@cloudflare/config` 0.28.0。`cloudflare.config.ts` 声明运行配置，`scripts/lib/worker-config.ts` 从 `settings.ts` 取得业务配置默认值；`wrangler.config.ts` 只声明打包与开发服务器选项。无 mode 或 `--mode development` 使用本地配置；只有显式 `--mode production` 读取 `.env.production`（可用 `ENV_FILE` 指定），未知 mode 直接报错。
+固定使用 `cf` 1.0.0-beta.23、Wrangler 4.148.0 和配置适配器 `@cloudflare/config` 0.28.1。`cloudflare.config.ts` 声明运行配置，`scripts/lib/worker-config.ts` 从 `settings.ts` 取得业务配置默认值；`wrangler.config.ts` 只声明打包与开发服务器选项。无 mode 或 `--mode development` 使用本地配置；只有显式 `--mode production` 读取 `.env.production`（可用 `ENV_FILE` 指定），未知 mode 直接报错。
+
+2026-10-26 按最新发布升级 cf，并将直接引用的配置适配器与其依赖版本对齐。此次明确升级产生的 pnpm 发布等待期例外仅覆盖 `pnpm-workspace.yaml` 中列出的五个精确版本，供本地和 CI 按锁文件安装。版本说明见 [cf beta.23 发布记录](https://github.com/cloudflare/cf/releases/tag/cf%401.0.0-beta.23)。
 
 `pnpm run dev` 先应用本地 D1 迁移、构建网页，再启动网页监听与 `cf dev`。`pnpm run types` 使用 `cf workers types` 生成 `.cloudflare/types/index.d.ts`，`typecheck` 自动先生成类型。直接执行 `cf build` 不会执行 `package.json` 里的网页构建，因此日常使用 `pnpm run build`；生产发布使用 `pnpm run deploy`。
 

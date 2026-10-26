@@ -7,3 +7,10 @@ allowBuilds:
   esbuild: true
   workerd: true
   "@tailwindcss/oxide": true
+# Exact versions required by the explicitly requested latest cf upgrade on 2026-10-26.
+minimumReleaseAgeExclude:
+  - "@cloudflare/build-output-utils@0.9.5"
+  - "@cloudflare/config@0.28.1"
+  - "@cloudflare/runtime-types@0.1.16"
+  - cf@1.0.0-beta.23
+  - miniflare@5.20261023.0-beta
