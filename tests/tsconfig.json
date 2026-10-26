@@ -1,4 +1,4 @@
 {
   "extends": "../tsconfig.json",
-  "include": ["./**/*.ts", "../playwright.config.ts", "../src/server/worker-configuration.d.ts"]
+  "include": ["./**/*.ts", "../playwright.config.ts", "../.cloudflare/types/index.d.ts"]
 }

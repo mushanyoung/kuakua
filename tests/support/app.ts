@@ -1,5 +1,6 @@
-import { resolve } from "node:path";
-import { createTestHarness, unstable_readConfig } from "wrangler";
+import { createTestHarness } from "wrangler";
+
+import { testWorkerConfig } from "./config.ts";
 
 const testVars = {
   DEV_AUTH_EMAIL: "alice@example.com",
@@ -14,28 +15,7 @@ const testVars = {
 };
 
 export async function createApp(fixedClock = false) {
-  const server = createTestHarness({
-    workers: [
-      {
-        configPath: "wrangler.jsonc",
-        vars: testVars,
-      },
-    ],
-  });
-  if (fixedClock) {
-    const config = unstable_readConfig({ config: "wrangler.jsonc" });
-    await server.update({
-      workers: [
-        {
-          config: {
-            ...config,
-            main: resolve("tests/support/fixed-clock-worker.ts"),
-            vars: { ...config.vars, ...testVars },
-          },
-        },
-      ],
-    });
-  }
+  const server = createTestHarness({ workers: [{ config: testWorkerConfig(testVars, fixedClock) }] });
   try {
     const { url } = await server.listen();
     const worker = server.getWorker<Env>();

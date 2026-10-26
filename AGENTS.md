@@ -35,8 +35,9 @@ pnpm run lint                # recommended，警告也失败
 pnpm run typecheck           # 独立 strict 类型检查
 pnpm run test:unit           # 核心规则与边界
 pnpm run test:integration    # 本地 Workers / D1 / R2 回归
+pnpm run test:cli            # cf 开发服务、存储与生产打包 dry-run（先 build）
 pnpm run test:e2e            # 桌面与移动端浏览器流程（先 build）
-pnpm run build              # 网页生产构建 + Worker dry-run 打包
+pnpm run build              # 网页生产构建 + cf Worker 打包
 pnpm run doctor             # 只读部署配置体检
 ```
 

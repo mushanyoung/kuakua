@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 
 const group = process.argv[2];
-if (group !== "unit" && group !== "integration") throw new Error("Expected unit or integration");
+if (group !== "unit" && group !== "integration" && group !== "cli") throw new Error("Expected unit, integration or cli");
 mkdirSync("test-results", { recursive: true });
 const result = spawnSync(
   process.execPath,
@@ -13,7 +13,7 @@ const result = spawnSync(
     "--test-reporter-destination=stdout",
     "--test-reporter=junit",
     `--test-reporter-destination=test-results/${group}.xml`,
-    group === "unit" ? "tests/unit/*.test.ts" : "tests/*.test.ts",
+    group === "integration" ? "tests/*.test.ts" : `tests/${group}/*.test.ts`,
   ],
   { stdio: "inherit" },
 );

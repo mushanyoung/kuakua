@@ -11,7 +11,7 @@ import { copy, type Lang, type Notice, nameIn, site } from "./notify";
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function mailer() {
-  if (!("EMAIL" in env)) throw new Error("EMAIL binding missing: set EMAIL_NOTIFY=1 and redeploy");
+  if (!env.EMAIL) throw new Error("EMAIL binding missing: set EMAIL_NOTIFY=1 and redeploy");
   return env.EMAIL;
 }
 

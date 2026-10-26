@@ -9,6 +9,7 @@ data-*/
 local/
 *.log
 .wrangler/
+.cloudflare/
 dist/
 test-results/
 playwright-report/

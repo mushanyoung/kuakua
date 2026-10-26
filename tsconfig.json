@@ -15,5 +15,5 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["node"]
   },
-  "include": ["src/web", "src/shared", "scripts"]
+  "include": ["src/web", "src/shared", "scripts", "cloudflare.config.ts", "wrangler.config.ts"]
 }

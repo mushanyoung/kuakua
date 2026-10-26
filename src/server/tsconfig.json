@@ -1,6 +1,7 @@
 {
   // The Worker (src/server) is checked on its own with Workers runtime types from
-  // `wrangler types` (worker-configuration.d.ts); the rest of the repo uses DOM + Node.js types.
+  // `cf workers types` (.cloudflare/types/index.d.ts). Its inferred Env imports the
+  // Node-based config; Node types support that config and the enabled nodejs_compat flag.
   "compilerOptions": {
     "lib": ["ES2024"],
     "target": "ES2024",
@@ -14,7 +15,7 @@
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
-    "types": []
+    "types": ["node"]
   },
-  "include": ["./**/*.ts", "../shared/**/*.ts"]
+  "include": ["./**/*.ts", "../shared/**/*.ts", "../../.cloudflare/types/index.d.ts"]
 }

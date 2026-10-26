@@ -14,9 +14,17 @@ pnpm run demo:seed
 pnpm run dev
 ```
 
-本地地址 `http://127.0.0.1:4381`，使用 `wrangler.jsonc` 中的模拟身份和本地 D1/R2。`X-Dev-Email` 可切换身份；`demo:seed` 会替换本地数据，不接触部署数据。网页文件变化自动重新构建，浏览器刷新查看。生产运行在 Workers；Node.js 用于工具链与测试。
+本地地址 `http://127.0.0.1:4381`，使用 `cloudflare.config.ts` 开发模式的模拟身份和本地 D1/R2。`X-Dev-Email` 可切换身份；`demo:seed` 会替换本地数据，不接触部署数据。网页文件变化自动重新构建，浏览器刷新查看。生产运行在 Workers；Node.js 用于工具链与测试。
 
-前端由 esbuild 打包，PostCSS 编译 Tailwind，输出 `dist/`；`pnpm run build` 另将 Worker 打包至 `.wrangler/build/`，不上传。静态资源使用绝对 URL，保证 `/u/:id`、`/k/:id` 等深链接正常加载。
+前端由 esbuild 打包，PostCSS 编译 Tailwind，输出 `dist/`；`pnpm run build` 通过 `cf build` 将 Worker 和静态资源打包至 `.cloudflare/output/v0/`，不上传。静态资源使用绝对 URL，保证 `/u/:id`、`/k/:id` 等深链接正常加载。
+
+## Cloudflare 工具链
+
+固定使用 `cf` 1.0.0-beta.21、Wrangler 4.148.0 和配置适配器 `@cloudflare/config` 0.28.0。`cloudflare.config.ts` 声明运行配置，`scripts/lib/worker-config.ts` 从 `settings.ts` 取得业务配置默认值；`wrangler.config.ts` 只声明打包与开发服务器选项。无 mode 或 `--mode development` 使用本地配置；只有显式 `--mode production` 读取 `.env.production`（可用 `ENV_FILE` 指定），未知 mode 直接报错。
+
+`pnpm run dev` 先应用本地 D1 迁移、构建网页，再启动网页监听与 `cf dev`。`pnpm run types` 使用 `cf workers types` 生成 `.cloudflare/types/index.d.ts`，`typecheck` 自动先生成类型。直接执行 `cf build` 不会执行 `package.json` 里的网页构建，因此日常使用 `pnpm run build`；生产发布使用 `pnpm run deploy`。
+
+本地数据继续保存在 `.wrangler/state`，D1 ID 保持 `local-dev`。当前 cf 的 D1 CLI 即使加 `--local` 也只接受 UUID，因此本地迁移和演示数据导入保留 Wrangler，并从同一份 cf 配置生成 `.wrangler/local.json`。生产 D1 迁移使用 `cf d1 migrations apply <D1_DATABASE_ID> --dir migrations`。R2 上传改用 cf，本地操作显式传 `--persist-to .wrangler/state`，避免落到 cf 默认的全局存储目录。测试与工具验证必须用独立临时目录。
 
 ## 迭代
 

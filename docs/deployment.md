@@ -9,7 +9,8 @@
 - **部署相关的一切都在 git 之外**，`git pull` 不会碰它们：
   - `.env.production` 部署配置（含密钥，权限 600）
   - `.env.cloudflare` Cloudflare API 凭据（`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`；也可以用 `CLOUDFLARE_ENV_FILE` 指向别处）
-  - `local/` 名单 `roster.csv`、头像、`values.json`，以及脚本生成的 `wrangler.json`、上次部署记录
+  - `local/` 名单 `roster.csv`、头像、`values.json`，以及上次部署记录
+  - `.cloudflare/` 生成类型和构建产物（含该次构建的非密钥部署变量）
 - **不要为了某个部署改代码或提交上面这些文件。** 需要新的可配置项时，在 `src/server/settings.ts` 里声明（见文末"改代码"）。
 - 所有配置项的唯一来源是 `src/server/settings.ts`；`.env.example` 是从它生成的。部署时，`deploy.sh` 把其中给 Worker 的项变成 Worker 的变量和密钥。
 - 工具：
@@ -116,7 +117,7 @@ pnpm run doctor        # 必须没有 ✗
 ./scripts/deploy.sh
 ```
 
-Wrangler 成功发布 Worker 后，脚本会记录本次部署。让管理员打开网站登录验证：管理页的"名单同步 / Lark 通讯录同步"显示成功、人数对得上（Lark 模式可点"立即同步"，不用等到夜里）。
+`cf deploy --mode production --prebuilt --no-provision` 成功发布 Worker 后，脚本会记录本次部署。让管理员打开网站登录验证：管理页的"名单同步 / Lark 通讯录同步"显示成功、人数对得上（Lark 模式可点"立即同步"，不用等到夜里）。
 
 ## 任务 B：升级（拉了新代码之后）
 
@@ -142,18 +143,22 @@ pnpm run doctor
 | 改品质标签                           | 改 `VALUES_FILE` 指向的文件 → `./scripts/deploy.sh`。已用过的标签 id 不要删改，否则旧帖子上的标签不再显示                                                       |
 | 换域名                               | `config set PUBLIC_URL ...` → `./scripts/cloudflare-setup.sh` → `./scripts/deploy.sh`                                                                           |
 
+部署脚本先构建网页，再执行 `cf build --mode production`，随后记还原点、应用迁移、上传名单，最后发布这次构建产物。生产配置直接从 `.env.production` / `settings.ts` 生成，不再生成或读取 `local/wrangler.json`；旧文件可留存但不再生效。密钥由权限 600 的临时 `local/.secrets.json` 通过 `--secrets-file` 上传，退出时删除。已有 D1/R2 资源由 setup 脚本准备，发布使用 `--no-provision`。
+
+仅验证生产打包时可在构建网页后执行 `pnpm exec cf deploy --mode production --dry-run`；这会读取本地部署配置，但不发布。正常开发检查使用开发模式，无需线上凭据。
+
 ## 回滚与排障
 
-- 实时日志：`pnpm exec wrangler tail -c local/wrangler.json`（`-c` 用 `deploy.sh` 生成的配置）。
-- 回滚代码：`pnpm exec wrangler rollback -c local/wrangler.json`（回到上一个版本），或 `git checkout <commit>` → `./scripts/deploy.sh`。
-- 回滚数据：每次部署前的 D1 还原点记在 `local/last-deploy` 第三列；`pnpm exec wrangler d1 time-travel restore <WORKER_NAME> --bookmark <还原点> -c local/wrangler.json`。D1 自带 30 天内任意时刻的还原（付费版；免费版 7 天）。
+- 实时日志：`pnpm exec wrangler tail <WORKER_NAME>`（cf 尚不支持实时日志；使用部署配置里的 Worker 名）。
+- 回滚代码：`pnpm exec wrangler rollback --name <WORKER_NAME>`（回到上一个版本），或 `git checkout <commit>` → `./scripts/deploy.sh`。
+- 回滚数据：每次部署前的 D1 还原点记在 `local/last-deploy` 第三列；`pnpm exec cf d1 time-travel restore <D1_DATABASE_ID> --bookmark <还原点>`。D1 自带 30 天内任意时刻的还原（付费版；免费版 7 天）。
 - 有人登录后看到 `email_domain_not_allowed`：他的邮箱不在名单 / Lark 通讯录、`ALLOWED_EMAIL_DOMAINS`、`ADMIN_EMAILS` 里。
 - 被 Cloudflare 登录页拦住：重跑 `./scripts/cloudflare-setup.sh`（名单变了要更新 Access 策略），检查 Zero Trust 里的登录方式。
 
 ## 改代码时
 
-- 本地开发：`pnpm run demo:seed`（本地 D1 填演示数据），`pnpm run dev`（http://127.0.0.1:4381，用本地 D1/R2，以 `wrangler.jsonc` 里的 `DEV_AUTH_EMAIL` 管理员身份登录；请求头 `X-Dev-Email` 可以切换成别人），`pnpm run typecheck`。
-- 改了 `wrangler.jsonc` 的绑定或变量：`pnpm run types` 重新生成 `src/server/worker-configuration.d.ts`。
+- 本地开发：`pnpm run demo:seed`（本地 D1 填演示数据），`pnpm run dev`（http://127.0.0.1:4381，用本地 D1/R2，以 cf 开发模式里的 `DEV_AUTH_EMAIL` 管理员身份登录；请求头 `X-Dev-Email` 可以切换成别人），`pnpm run typecheck`。
+- 改了 `cloudflare.config.ts` 或 `scripts/lib/worker-config.ts` 的绑定或变量：`pnpm run types` 重新生成 `.cloudflare/types/index.d.ts`。
 - 加配置项：在 `src/server/settings.ts` 声明（说明、默认值、`scope`、是否必填、校验），Worker 需要的话在 `src/server/config.ts` 用 `get("KEY")` 读（没声明的读不了），然后 `pnpm --silent run config example > .env.example`。不要在代码里写死任何公司、域名、人。
-- 数据库结构：在 `migrations/` 加新的 `NNNN_xxx.sql`，不要改已有的；`deploy.sh` 会自动应用。D1 只支持 `?1` 这种参数，`src/server/db.ts` 的 `q()` 把代码里的 `$name` 转换过去。
+- 数据库结构：在 `migrations/` 加新的 `NNNN_xxx.sql`，不要改已有的；`deploy.sh` 用 `cf d1 migrations apply <D1_DATABASE_ID> --dir migrations` 自动应用。D1 只支持 `?1` 这种参数，`src/server/db.ts` 的 `q()` 把代码里的 `$name` 转换过去。
 - D1 一次请求最多 1000 条查询（免费版 50）：批量写入用 `json_each` 的集合式语句，不要逐行循环。

@@ -1,5 +1,5 @@
 import { required } from "../src/shared/required.ts";
-/// <reference path="../src/server/worker-configuration.d.ts" />
+/// <reference path="../.cloudflare/types/index.d.ts" />
 
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import { after, before, beforeEach, test } from "node:test";
 import { createTestHarness } from "wrangler";
 import type { LarkChatMembers, LarkChatPage, Me, PostDetail } from "../src/web/api";
+import { testWorkerConfig } from "./support/config.ts";
 
 // Exercise the real Worker and D1 against a local Lark HTTP stub. No real app
 // credentials, directory sync, notifications or production data are involved.
@@ -51,9 +52,7 @@ before(
     await server.update({
       workers: [
         {
-          configPath: "wrangler.jsonc",
-          vars: { ...vars, LARK_BASE_URL: larkBaseUrl },
-          secrets: { LARK_APP_SECRET: "test-secret" },
+          config: testWorkerConfig({ ...vars, LARK_BASE_URL: larkBaseUrl, LARK_APP_SECRET: "test-secret" }),
         },
       ],
     });

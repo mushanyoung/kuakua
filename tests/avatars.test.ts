@@ -1,23 +1,24 @@
 import { required } from "../src/shared/required.ts";
-/// <reference path="../src/server/worker-configuration.d.ts" />
+/// <reference path="../.cloudflare/types/index.d.ts" />
 
 import assert from "node:assert/strict";
 import { after as afterAll, before as beforeAll, beforeEach, test } from "node:test";
 import { createTestHarness } from "wrangler";
 import { MAX_AVATAR_BYTES } from "../src/shared/avatars.ts";
 import type { User } from "../src/web/api";
+import { testWorkerConfig } from "./support/config.ts";
 
 // Real Workers runtime, isolated local D1/R2, no Cloudflare account or production data.
 const server = createTestHarness({
   workers: [
     {
-      configPath: "wrangler.jsonc",
-      vars: { DEV_AUTH_EMAIL: "admin@example.com", ADMIN_EMAILS: "admin@example.com", EMAIL_NOTIFY: "0" },
+      config: testWorkerConfig({ DEV_AUTH_EMAIL: "admin@example.com", ADMIN_EMAILS: "admin@example.com", EMAIL_NOTIFY: "0" }),
     },
   ],
 });
 const worker = server.getWorker<Env>();
 let env: Env;
+let serverUrl: URL;
 const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="), (c) =>
   c.charCodeAt(0),
 );
@@ -29,7 +30,7 @@ const customKeys = async () => (await env.FILES.list({ prefix: "custom-avatars/"
 
 beforeAll(
   async () => {
-    await server.listen();
+    ({ url: serverUrl } = await server.listen());
     await worker.applyD1Migrations("DB");
     env = await worker.getEnv();
   },
@@ -106,9 +107,13 @@ test("invalid and oversized files leave the existing avatar unchanged", async ()
     assert.equal(r.status, 415);
     assert.equal(((await r.json()) as { error: string }).error, "avatar_invalid");
   }
-  assert.equal((await request("/api/users/me/avatar", "PUT", new Uint8Array(MAX_AVATAR_BYTES + 1))).status, 413);
+  const oversized = await request("/api/users/me/avatar", "PUT", new Uint8Array(MAX_AVATAR_BYTES + 1));
+  assert.equal(oversized.status, 413);
+  assert.equal(((await oversized.json()) as { error: string }).error, "avatar_too_large");
   let chunks = 0;
-  const streamed = await worker.fetch("/api/users/me/avatar", {
+  // A rejected upload cancels its HTTP stream. Use the listening server so this
+  // cancellation cannot close the harness transport shared by D1/R2 RPC calls.
+  const uploadRequest: RequestInit & { duplex: "half" } = {
     method: "PUT",
     duplex: "half",
     headers: { "X-Dev-Email": "self@example.com" },
@@ -118,8 +123,10 @@ test("invalid and oversized files leave the existing avatar unchanged", async ()
         else controller.close();
       },
     }),
-  });
+  };
+  const streamed = await fetch(new URL("/api/users/me/avatar", serverUrl), uploadRequest);
   assert.equal(streamed.status, 413);
+  assert.equal(((await streamed.json()) as { error: string }).error, "avatar_too_large");
   assert.equal((await current()).avatar, original.avatar);
   assert.equal((await customKeys()).length, 1);
 });

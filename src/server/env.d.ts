@@ -1,4 +1,4 @@
-// Secrets aren't in wrangler.jsonc, so `wrangler types` doesn't know about them.
+// Optional production secrets are absent from the development config used for type generation.
 declare namespace Cloudflare {
   interface Env {
     LARK_APP_SECRET?: string;

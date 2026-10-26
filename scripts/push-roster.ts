@@ -10,13 +10,14 @@ import { join, resolve } from "node:path";
 import { required } from "../src/shared/required.ts";
 import { effective, fileValues, ROOT } from "./lib/env.ts";
 import { imageType, readRosterFile } from "./lib/roster.ts";
+import { LOCAL_BUCKET, LOCAL_STATE } from "./lib/worker-config.ts";
 
 const local = process.argv.includes("--local");
 const env = local ? {} : fileValues();
 const fileArg = process.argv.find((a) => a.startsWith("--file="))?.slice(7);
 const rosterFile = resolve(ROOT, fileArg ?? effective(env, "ROSTER_FILE"));
-const bucket = local ? "kuakua-files" : `${effective(env, "WORKER_NAME")}-files`;
-const configArgs = local ? [] : ["-c", join(ROOT, "local/wrangler.json")];
+const bucket = local ? LOCAL_BUCKET : `${effective(env, "WORKER_NAME")}-files`;
+const persistTo = process.argv.find((arg) => arg.startsWith("--persist-to="))?.slice("--persist-to=".length) ?? LOCAL_STATE;
 
 const roster = readRosterFile(rosterFile);
 for (const w of roster.warnings) console.log(`  ⚠ ${w}`);
@@ -44,24 +45,25 @@ files.push({
 
 const manifestFile = join(ROOT, "local/roster-uploaded.json");
 const manifest: Record<string, Record<string, string>> = existsSync(manifestFile) ? JSON.parse(readFileSync(manifestFile, "utf8")) : {};
-const target = `${local ? "local" : "remote"}:${bucket}`;
+const target = local ? `local:${resolve(ROOT, persistTo)}:${bucket}` : `remote:${bucket}`;
 manifest[target] ??= {};
 const uploaded = manifest[target];
 
 function put(key: string, path: string, type: string) {
   const args = [
     "exec",
-    "wrangler",
+    "cf",
     "r2",
-    "object",
+    "objects",
     "put",
-    `${bucket}/${key}`,
+    key,
+    "--bucket-name",
+    bucket,
     "--file",
     path,
     "--content-type",
     type,
-    local ? "--local" : "--remote",
-    ...configArgs,
+    ...(local ? ["--local", "--persist-to", persistTo] : []),
   ];
   const res = spawnSync("pnpm", args, { cwd: ROOT, stdio: ["ignore", "ignore", "pipe"] });
   if (res.status !== 0)

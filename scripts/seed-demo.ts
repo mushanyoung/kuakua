@@ -1,5 +1,5 @@
 import { required } from "../src/shared/required.ts";
-// Fills the local dev database (wrangler dev's D1 under .wrangler/state) with demo
+// Fills the local dev database (cf dev's D1 under .wrangler/state) with demo
 // people and posts: `pnpm run demo:seed`. Builds them in a scratch SQLite file with the D1
 // schema, then loads that into local D1. Never touches a deployed database.
 
@@ -9,7 +9,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { REACTIONS, values } from "../src/shared/values.ts";
+import { writeLocalWranglerConfig } from "./lib/local-wrangler.ts";
 import { exportRows } from "./lib/sqlite-export.ts";
+import { LOCAL_STATE } from "./lib/worker-config.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "kuakua-demo-"));
@@ -156,15 +158,21 @@ const file = join(scratch, "demo.sql");
 writeFileSync(file, sql);
 db.close();
 // A separate state directory lets CI validate seeding without replacing a developer's data.
-const persistTo = process.argv.find((arg) => arg.startsWith("--persist-to="))?.slice("--persist-to=".length);
-const load = spawnSync(
-  "pnpm",
-  ["exec", "wrangler", "d1", "execute", "kuakua", "--local", "--file", file, "--yes", ...(persistTo ? ["--persist-to", persistTo] : [])],
-  {
-    cwd: ROOT,
-    stdio: ["ignore", "ignore", "inherit"],
-  },
-);
-rmSync(scratch, { recursive: true, force: true });
-if (load.status !== 0) process.exit(1);
+const persistTo = process.argv.find((arg) => arg.startsWith("--persist-to="))?.slice("--persist-to=".length) ?? LOCAL_STATE;
+try {
+  const config = await writeLocalWranglerConfig();
+  for (const command of [
+    ["d1", "migrations", "apply", "DB"],
+    ["d1", "execute", "DB", "--file", file, "--yes"],
+  ]) {
+    const result = spawnSync("pnpm", ["exec", "wrangler", ...command, "-c", config, "--local", "--persist-to", persistTo], {
+      cwd: ROOT,
+      stdio: ["ignore", "ignore", "inherit"],
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error("Loading demo data into local D1 failed");
+  }
+} finally {
+  rmSync(scratch, { recursive: true, force: true });
+}
 console.log(`seeded ${ids.length} people and 64 posts into the local dev database`);

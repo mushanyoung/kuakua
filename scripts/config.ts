@@ -9,7 +9,6 @@
 //   pnpm run config example            print .env.example, generated from src/server/settings.ts
 //
 // Used by the deploy scripts:
-//   pnpm run config wrangler-config    write local/wrangler.json for this deployment
 //   pnpm run config secrets-file       write local/.secrets.json (Worker secrets) and print its path
 //   pnpm run config access-include     Cloudflare Access include rules (JSON)
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -146,8 +145,10 @@ function doctor() {
     const mode = statSync(cf.file).mode & 0o777;
     if (mode & 0o077) warn(`${cf.file} is readable by others; chmod 600 it`);
   }
-  if (existsSync(join(ROOT, "node_modules/.bin/wrangler"))) ok("wrangler is installed");
-  else fail("wrangler is not installed — run pnpm install");
+  for (const tool of ["cf", "wrangler"]) {
+    if (existsSync(join(ROOT, `node_modules/.bin/${tool}`))) ok(`${tool} is installed`);
+    else fail(`${tool} is not installed — run pnpm install`);
+  }
 
   console.log(failures ? `\n${failures} problem(s) to fix before deploying.` : "\nReady to deploy.");
   return failures ? 1 : 0;
@@ -155,56 +156,7 @@ function doctor() {
 
 // ---------------------------------------------------------------- deploy helpers
 
-function compatibilityDate() {
-  const m = /"compatibility_date"\s*:\s*"([^"]+)"/.exec(readFileSync(join(ROOT, "wrangler.jsonc"), "utf8"));
-  if (!m) throw new Error("compatibility_date not found in wrangler.jsonc");
-  return required(m[1]);
-}
-
-// The deployment's Wrangler config: same shape as the dev wrangler.jsonc, plus the real
-// resources, the custom domain and the vars from .env.production.
-function wranglerConfig() {
-  const env = fileValues();
-  const name = effective(env, "WORKER_NAME");
-  const host = new URL(effective(env, "PUBLIC_URL")).host;
-  const valuesFile = effective(env, "VALUES_FILE");
-  const vars: Record<string, string> = {
-    ENVIRONMENT: "production",
-    VALUES_JSON: valuesFile ? JSON.stringify(parseValues(JSON.parse(readFileSync(resolve(ROOT, valuesFile), "utf8")))) : "",
-  };
-  for (const s of SETTINGS) {
-    if (s.scope === "worker" && !s.secret && !s.devOnly && env[s.key] !== undefined) vars[s.key] = required(env[s.key]);
-  }
-  const config = {
-    $schema: "../node_modules/wrangler/config-schema.json",
-    name,
-    main: "../src/server/worker.ts",
-    compatibility_date: compatibilityDate(),
-    compatibility_flags: ["nodejs_compat"],
-    workers_dev: false,
-    preview_urls: false,
-    routes: [{ pattern: host, custom_domain: true }],
-    assets: {
-      directory: "../dist",
-      binding: "ASSETS",
-      not_found_handling: "single-page-application",
-      run_worker_first: ["/api/*", "/avatars/*"],
-    },
-    d1_databases: [{ binding: "DB", database_name: name, database_id: effective(env, "D1_DATABASE_ID"), migrations_dir: "../migrations" }],
-    r2_buckets: [{ binding: "FILES", bucket_name: `${name}-files` }],
-    // Cloudflare Email Service; only bound when notification emails are on.
-    ...(effective(env, "EMAIL_NOTIFY") === "1" ? { send_email: [{ name: "EMAIL" }] } : {}),
-    triggers: { crons: [effective(env, "SYNC_CRON")] },
-    vars,
-    observability: { enabled: true },
-  };
-  mkdirSync(join(ROOT, "local"), { recursive: true });
-  const file = join(ROOT, "local/wrangler.json");
-  writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
-  console.log(file);
-}
-
-// Worker secrets for `wrangler deploy --secrets-file`; prints nothing when there are none.
+// Worker secrets for `cf deploy --secrets-file`; prints nothing when there are none.
 function secretsFile() {
   const env = fileValues();
   const secrets = Object.fromEntries(SETTINGS.filter((s) => s.secret && env[s.key]).map((s) => [s.key, required(env[s.key])]));
@@ -309,9 +261,6 @@ switch (cmd) {
   }
   case "example":
     example();
-    break;
-  case "wrangler-config":
-    wranglerConfig();
     break;
   case "secrets-file":
     secretsFile();

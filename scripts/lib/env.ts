@@ -60,7 +60,7 @@ export const splitList = (v: string) =>
     .map((s) => s.trim())
     .filter(Boolean);
 
-// Cloudflare credentials for wrangler, from CLOUDFLARE_ENV_FILE (never from .env.production).
+// Cloudflare credentials for deployment tools, from CLOUDFLARE_ENV_FILE (never from .env.production).
 export function cloudflareEnv(env = fileValues()) {
   const file = resolve(ROOT, process.env.CLOUDFLARE_ENV_FILE || effective(env, "CLOUDFLARE_ENV_FILE"));
   const creds = existsSync(file) ? fileValues(readEnvFile(file)) : {};

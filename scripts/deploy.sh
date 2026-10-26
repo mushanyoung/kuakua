@@ -5,7 +5,7 @@
 #
 #   1. shows what changed since the last deploy
 #   2. installs dependencies, runs `pnpm run doctor` and stops if anything is missing or wrong
-#   3. builds the web app and writes local/wrangler.json from .env.production
+#   3. builds the web app and production Worker from .env.production
 #   4. notes a D1 Time Travel bookmark (restore point), then applies D1 migrations
 #   5. uploads the roster and its avatars (DIRECTORY_SOURCE=roster)
 #   6. deploys the Worker with its secrets and records the successful deployment
@@ -27,7 +27,7 @@ if [[ -f "$CF_FILE" ]]; then
   set +a
 fi
 export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
-export CI=1 # no interactive prompts from wrangler
+export CI=1 # no interactive prompts from Cloudflare tools
 
 NAME="$(conf WORKER_NAME)"
 PUBLIC_URL="$(conf PUBLIC_URL)"
@@ -66,13 +66,14 @@ fi
 # 3. Build
 echo "==> build"
 node scripts/build-web.ts
-CONFIG="$(node scripts/config.ts wrangler-config)"
+pnpm exec cf build --mode production
+DATABASE_ID="$(conf D1_DATABASE_ID)"
 
 # 4. Database
-BOOKMARK="$(pnpm exec wrangler d1 time-travel info "$NAME" --json -c "$CONFIG" 2>/dev/null | jq -r '.bookmark // empty' || true)"
+BOOKMARK="$(pnpm exec cf d1 time-travel get-bookmark "$DATABASE_ID" 2>/dev/null | jq -r '.bookmark // .result.bookmark // empty' || true)"
 [[ -n "$BOOKMARK" ]] && echo "==> D1 restore point before this deploy: $BOOKMARK"
 echo "==> D1 migrations"
-pnpm exec wrangler d1 migrations apply "$NAME" --remote -c "$CONFIG"
+pnpm exec cf d1 migrations apply "$DATABASE_ID" --dir migrations
 
 # 5. Roster
 if [[ "$(node -e 'import { directorySourceOf } from "./src/server/settings.ts"; import { fileValues } from "./scripts/lib/env.ts"; console.log(directorySourceOf(fileValues()))')" == "roster" ]]; then
@@ -81,10 +82,10 @@ if [[ "$(node -e 'import { directorySourceOf } from "./src/server/settings.ts"; 
 fi
 
 # 6. Worker
-echo "==> wrangler deploy"
+echo "==> cf deploy"
 SECRETS="$(node scripts/config.ts secrets-file)"
 trap '[[ -n "${SECRETS:-}" ]] && rm -f "$SECRETS"' EXIT
-pnpm exec wrangler deploy -c "$CONFIG" ${SECRETS:+--secrets-file "$SECRETS"}
+pnpm exec cf deploy --mode production --prebuilt --no-provision ${SECRETS:+--secrets-file "$SECRETS"}
 
 echo "$COMMIT $(date -Iseconds) ${BOOKMARK:-}" >"$STATE"
 echo "==> Deployed $COMMIT to $PUBLIC_URL (Worker $NAME)"
