@@ -1,6 +1,4 @@
-import { createTestHarness } from "wrangler";
-
-import { testWorkerConfig } from "./config.ts";
+import { createRuntime } from "./runtime.ts";
 
 const testVars = {
   DEV_AUTH_EMAIL: "alice@example.com",
@@ -15,11 +13,9 @@ const testVars = {
 };
 
 export async function createApp(fixedClock = false) {
-  const server = createTestHarness({ workers: [{ config: testWorkerConfig(testVars, fixedClock) }] });
+  const { server, worker } = createRuntime(testVars, fixedClock);
   try {
     const { url } = await server.listen();
-    const worker = server.getWorker<Env>();
-    await worker.applyD1Migrations("DB");
     const env = await worker.getEnv();
     return { server, worker, env, url: url.href };
   } catch (error) {

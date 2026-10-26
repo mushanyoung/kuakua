@@ -1,7 +1,8 @@
+import "../../scripts/lib/privacy.ts";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -12,15 +13,16 @@ const root = resolve(import.meta.dirname, "../..");
 const cli = join(root, "node_modules/cf/bin/cf");
 
 async function prepareProject(project: string) {
-  for (const name of ["node_modules", "src"]) await symlink(join(root, name), join(project, name), "dir");
-  await writeFile(join(project, "package.json"), await readFile(join(root, "package.json")));
+  await symlink(join(root, "node_modules"), join(project, "node_modules"), "dir");
+  await cp(join(root, "src"), join(project, "src"), { recursive: true });
+  for (const file of ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]) await cp(join(root, file), join(project, file));
   await writeFile(
     join(project, "cloudflare.config.ts"),
     `export { default } from ${JSON.stringify(join(root, "cloudflare.config.ts"))};\n`,
   );
   await writeFile(
-    join(project, "wrangler.config.ts"),
-    `export default { assetsDirectory: ${JSON.stringify(join(root, "dist"))}, types: { generate: false }, dev: { ip: "127.0.0.1", port: 0 } };\n`,
+    join(project, "vite.config.ts"),
+    `import config from ${JSON.stringify(join(root, "vite.config.ts"))};\nexport default { ...config, publicDir: ${JSON.stringify(join(root, "dist"))}, server: { host: "127.0.0.1", port: 0 } };\n`,
   );
 }
 
@@ -63,29 +65,26 @@ test("local migrations and demo data are visible to cf dev in isolated storage",
       { cwd: project, env },
     );
     await exec(
-      "pnpm",
+      process.execPath,
       [
-        "exec",
-        "wrangler",
+        cli,
         "d1",
-        "execute",
-        "DB",
-        "-c",
-        join(root, ".wrangler/local.json"),
+        "raw",
+        "local-dev",
         "--local",
         "--persist-to",
         state,
-        "--command",
+        "--sql",
         "UPDATE users SET custom_avatar_key = 'probe.png' WHERE email = 'mushan@example.com'",
       ],
-      { cwd: root, env },
+      { cwd: project, env },
     );
-    server = spawn(process.execPath, [cli, "dev"], { cwd: project, env, stdio: ["ignore", "pipe", "pipe"] });
+    server = spawn(process.execPath, [cli, "dev", "--mode", "development"], { cwd: project, env, stdio: ["ignore", "pipe", "pipe"] });
     const url = await new Promise<string>((resolveUrl, reject) => {
       const timeout = setTimeout(() => reject(new Error(`cf dev did not start:\n${logs}`)), 15_000);
       const collect = (data: Buffer) => {
         logs += data.toString();
-        const match = /Ready on (http:\/\/127\.0\.0\.1:\d+)/.exec(logs);
+        const match = /(http:\/\/127\.0\.0\.1:\d+)/.exec(logs);
         if (match?.[1]) {
           clearTimeout(timeout);
           resolveUrl(match[1]);
@@ -109,6 +108,18 @@ test("local migrations and demo data are visible to cf dev in isolated storage",
     const page = await fetch(`${url}/u/me`);
     assert.equal(page.status, 200);
     assert.match(page.headers.get("content-type") ?? "", /text\/html/);
+    assert.match(await page.text(), /<div id="root"><\/div>/);
+    await exec(process.execPath, [cli, "build", "--mode", "development"], { cwd: project, env });
+    for (const extra of [[], ["--prebuilt"]]) {
+      await exec(process.execPath, [cli, "deploy", "--mode", "development", "--dry-run", "--no-provision", ...extra], {
+        cwd: project,
+        env,
+      });
+    }
+    await assert.rejects(
+      exec(process.execPath, [cli, "deploy", "--mode", "production", "--prebuilt", "--dry-run"], { cwd: project, env }),
+      /mode/i,
+    );
   } finally {
     if (server && server.exitCode === null) {
       const closed = once(server, "exit");
@@ -152,6 +163,10 @@ LARK_APP_SECRET=${secret}
     assert.match(config, /00000000-0000-4000-8000-000000000001/);
     const secretsFile = join(project, "secrets.json");
     await writeFile(secretsFile, JSON.stringify({ LARK_APP_SECRET: secret }), { mode: 0o600 });
+    await exec(process.execPath, [cli, "deploy", "--mode", "production", "--dry-run", "--no-provision", "--secrets-file", secretsFile], {
+      cwd: project,
+      env,
+    });
     await exec(
       process.execPath,
       [cli, "deploy", "--mode", "production", "--prebuilt", "--dry-run", "--no-provision", "--secrets-file", secretsFile],

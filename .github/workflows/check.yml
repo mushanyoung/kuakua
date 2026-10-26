@@ -18,6 +18,8 @@ jobs:
     env:
       CI: "true"
       TZ: UTC
+      DO_NOT_TRACK: "1"
+      CF_SEND_TELEMETRY: "false"
       WRANGLER_SEND_METRICS: "false"
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

@@ -10,6 +10,7 @@
 #   5. uploads the roster and its avatars (DIRECTORY_SOURCE=roster)
 #   6. deploys the Worker with its secrets and records the successful deployment
 set -euo pipefail
+export DO_NOT_TRACK=1 CF_SEND_TELEMETRY=false WRANGLER_SEND_METRICS=false
 cd "$(dirname "$0")/.."
 
 conf() { node scripts/config.ts get "$1" --raw; }

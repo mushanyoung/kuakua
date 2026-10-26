@@ -16,22 +16,22 @@ pnpm run check
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm run format:check`     | Biome 格式，警告即失败                                                                                                                                   |
 | `pnpm run lint`             | Biome recommended，警告即失败                                                                                                                            |
-| `pnpm run typecheck`        | 网页、脚本、cf/Wrangler 配置、Worker、全部测试与 Playwright 配置，均为 strict                                                                            |
+| `pnpm run typecheck`        | 网页、脚本、cf/Vite 配置、Worker、全部测试与 Playwright 配置，均为 strict                                                                                |
 | `pnpm run test:unit`        | 积分按唯一接收人计费、自赠规则、抄送去重、消息与人数边界；时区月界、跨年、夏令时、闰月；名单解析与路径越界、品质标签校验                                 |
 | `pnpm run test:integration` | 本地 Workers / D1 / R2：头像权限、并发、数据库失败；Lark 权限、分页、人数上限；积分并发与返还、秘密夸、管理权限、停用用户                                |
-| `pnpm run test:cli`         | 隔离目录中的 D1 演示数据、cf R2 上传与开发服务互通；虚构生产配置的构建和发布 dry-run                                                                     |
+| `pnpm run test:cli`         | D1 迁移原子性、cf R2 与开发服务互通；两个 mode 的发布 dry-run；setup 对本地 API fixture 的幂等与 Access 策略保护                                         |
 | `pnpm run test:e2e`         | Chromium 桌面和移动视口：键盘选人并发送、详情深链接、表情、评论与删除；Bonus 校验和额度返还；秘密夸与抄送可见性；头像上传恢复及双语偏好；管理员 CSV 导出 |
 | `pnpm run build`            | esbuild + Tailwind 网页生产资源，以及 `cf build` 的压缩 Worker 和 Build Output 校验                                                                      |
 
-头像超限流式上传通过 harness 的真实 HTTP 地址发送，并读取完整错误响应；取消上传流不能与 D1/R2 RPC 共用 harness 内部传输连接。头像布局回归使用生产构建后的真实页面，验证自己和同事的详情页：桌面头像为 132px，移动端为 104px，导航头像保持各自尺寸，积分圆环仍填满 88px 容器。断言图片加载后的实际尺寸，防止共享类名覆盖尺寸后撑开页面。
+所有请求通过 Miniflare 的真实 HTTP 地址发送；头像超限流式上传读取完整错误响应，避免取消上传流干扰 D1/R2 RPC 连接。头像布局回归使用生产构建后的真实页面，验证自己和同事的详情页：桌面头像为 132px，移动端为 104px，导航头像保持各自尺寸，积分圆环仍填满 88px 容器。断言图片加载后的实际尺寸，防止共享类名覆盖尺寸后撑开页面。
 
-Cloudflare 配置 unit tests 验证开发身份隔离、生产资源 ID、域名和 Cron、邮件绑定开关、密钥不进入构建变量，以及缺少资源/错误 mode 的失败路径。`pnpm run test:cli` 在临时项目中运行本地迁移和演示数据导入、cf R2 上传与 `cf dev`，用真实 HTTP 确认 D1 和头像数据可见；另用虚构部署配置运行生产 `cf build` 和 `cf deploy --prebuilt --dry-run`，不发布资源。日志写入 `test-results/cf-dev.log`。CLI 回归在 harness 集成测试关闭后单独运行，并使用临时开发服务注册目录。
+Cloudflare 配置 unit tests 验证开发身份隔离、生产资源 ID、域名和 Cron、邮件绑定开关、密钥不进入构建变量，以及缺少资源/错误 mode 的失败路径。`pnpm run test:cli` 在临时项目中运行本地迁移和演示数据导入、cf R2 上传与 `cf dev`，用真实 HTTP 确认 D1 和头像数据可见；两个 mode 均执行 `cf build`、`cf deploy --dry-run` 和 `cf deploy --prebuilt --dry-run`，生产使用虚构设置；错误 mode 的预构建发布必须失败。本地迁移额外验证历史幂等性和失败批次的 schema/history 原子回滚，不发布资源。setup 回归运行真实 cf CLI，API 指向本地 HTTP fixture，唯一保留的 curl 查询使用测试替身；验证首次开通、重复执行、外部 Access 策略不改写及邮件开通。日志写入 `test-results/cf-dev.log`。CLI 回归在 Miniflare 集成测试关闭后单独运行，并使用临时开发服务注册目录。
 
-类型由 `cf workers types` 生成到 `.cloudflare/types/index.d.ts`，`typecheck` 每次先生成。生成的 Env 类型引用 TypeScript 配置，配置又引用 Node 文件工具，因此 Worker 类型检查同时加载 Node 类型；运行环境仍由 Workers runtime 类型和 `nodejs_compat` 约束。测试 harness 尚只支持 Wrangler 配置形状，适配器用锁定版本的 `@cloudflare/config` 从同一 cf 配置转换，不维护第二份手写配置。
+类型由 `cf workers types` 生成到 `.cloudflare/types/index.d.ts`，`typecheck` 每次先生成。生成的 Env 类型引用 TypeScript 配置，配置又引用 Node 文件工具，因此 Worker 类型检查同时加载 Node 类型；运行环境仍由 Workers runtime 类型和 `nodejs_compat` 约束。测试直接使用 Miniflare 5/workerd，运行 cf/Vite 已生成的 Worker 代码；从同一 cf 配置取得绑定，测试存储与注册目录隔离。Miniflare beta 的 Fetcher 类型未声明 scheduled 方法，测试先验证其真实存在再调用，不替代业务定时任务。
 
-核心规则无须模拟数据库即可测试；集成与浏览器测试使用真实 Worker 和隔离 D1/R2，只替代 Lark 等外部服务。固定时钟入口仅用于集成测试，稳定复现同毫秒请求，生产入口不包含它。浏览器测试用本地模拟身份，不验证线上 Access 身份提供方。网络登录和真实通知在部署后按部署指南验收。
+核心规则无须模拟数据库即可测试；集成与浏览器测试使用真实 Worker 和隔离 D1/R2，只替代 Lark 等外部服务。固定时钟仅在测试运行器加载构建产物时注入，稳定复现同毫秒请求，生产产物不包含它。浏览器测试用本地模拟身份，不验证线上 Access 身份提供方。网络登录和真实通知在部署后按部署指南验收。
 
-每个测试独立清理数据，harness 结束时关闭。e2e 不依赖开发者的 `.wrangler/state`，不启动现有 dev server。失败不得通过 skip、only、放宽断言或增加重试隐藏；修复行为或测试自身的错误。Playwright 开启 `forbidOnly`，`retries: 0`。
+每个测试独立清理数据，Miniflare 结束时关闭。e2e 不依赖开发者的 `.wrangler/state`，不启动现有 dev server。失败不得通过 skip、only、放宽断言或增加重试隐藏；修复行为或测试自身的错误。Playwright 开启 `forbidOnly`，`retries: 0`。
 
 ## 报告与流水线
 

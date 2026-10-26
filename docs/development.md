@@ -20,13 +20,25 @@ pnpm run dev
 
 ## Cloudflare 工具链
 
-固定使用 `cf` 1.0.0-beta.23、Wrangler 4.148.0 和配置适配器 `@cloudflare/config` 0.28.1。`cloudflare.config.ts` 声明运行配置，`scripts/lib/worker-config.ts` 从 `settings.ts` 取得业务配置默认值；`wrangler.config.ts` 只声明打包与开发服务器选项。无 mode 或 `--mode development` 使用本地配置；只有显式 `--mode production` 读取 `.env.production`（可用 `ENV_FILE` 指定），未知 mode 直接报错。
+固定使用 `cf` 1.0.0-beta.23、`@cloudflare/vite-plugin` 2.0.0-beta.v.5、Vite 8.3.5、Miniflare 5.20261023.0-beta 和 `@cloudflare/config` 0.28.1。cf 的 Node engines 为 `^22.23.0 || ^24.22.0 || ^26.12.0`，项目固定的 Node 26.12.1 满足要求。稳定版 Vite 插件 1.x 仍依赖 Wrangler，不能替换这里的 2.0 beta。项目直接依赖和锁文件都不再包含 Wrangler。
 
-2026-10-26 按最新发布升级 cf，并将直接引用的配置适配器与其依赖版本对齐。此次明确升级产生的 pnpm 发布等待期例外仅覆盖 `pnpm-workspace.yaml` 中列出的五个精确版本，供本地和 CI 按锁文件安装。版本说明见 [cf beta.23 发布记录](https://github.com/cloudflare/cf/releases/tag/cf%401.0.0-beta.23)。
+`cloudflare.config.ts` / `scripts/lib/worker-config.ts` 声明运行配置，`vite.config.ts` 声明本地端口、存储和构建。cf 实际调用 Vite/Rolldown；esbuild + PostCSS 仍负责网页资源，Vite 将 `dist/` 复制进 Build Output。构建不增加 Worker source map 或远端日志、traces 上传。Vite 禁用自动 dotenv 加载和远端 bindings，部署设置仍只由项目配置读取。
 
-`pnpm run dev` 先应用本地 D1 迁移、构建网页，再启动网页监听与 `cf dev`。`pnpm run types` 使用 `cf workers types` 生成 `.cloudflare/types/index.d.ts`，`typecheck` 自动先生成类型。直接执行 `cf build` 不会执行 `package.json` 里的网页构建，因此日常使用 `pnpm run build`；生产发布使用 `pnpm run deploy`。
+`pnpm run build` 和 `pnpm run dev` 显式传 `--mode development`，无需部署文件。生产使用 `--mode production`，读取 `.env.production`（可用 `ENV_FILE` 指定）；未知 mode 报错。注意直接运行 `cf build` 时，Vite 默认 mode 是 production；请使用项目脚本或明确传 mode。`--prebuilt` 必须与产物记录的 mode 一致。
 
-本地数据继续保存在 `.wrangler/state`，D1 ID 保持 `local-dev`。当前 cf 的 D1 CLI 即使加 `--local` 也只接受 UUID，因此本地迁移和演示数据导入保留 Wrangler，并从同一份 cf 配置生成 `.wrangler/local.json`。生产 D1 迁移使用 `cf d1 migrations apply <D1_DATABASE_ID> --dir migrations`。R2 上传改用 cf，本地操作显式传 `--persist-to .wrangler/state`，避免落到 cf 默认的全局存储目录。测试与工具验证必须用独立临时目录。
+```sh
+export DO_NOT_TRACK=1 CF_SEND_TELEMETRY=false WRANGLER_SEND_METRICS=false
+pnpm run build                         # 网页前置步骤 + development Worker
+pnpm run build:web
+pnpm exec cf build --mode production   # 仅构建，需部署设置，不需认证
+pnpm exec cf deploy --mode production --prebuilt --dry-run --no-provision
+```
+
+项目脚本与 CI 均设置以上隐私变量。直接执行 cf 前也应设置它们。`pnpm run types` 生成 `.cloudflare/types/index.d.ts`，`typecheck` 会自动先生成。cf 不执行 package.json 的前置网页构建，因此使用 `pnpm run build` / `pnpm run deploy`。
+
+本地存储路径继续为 `.wrangler/state`，这是保留数据的路径名，不是运行依赖；D1 ID 为 `local-dev`，R2 为 `kuakua-files`。cf 的 migrations 子命令只接受 UUID，但 `cf d1 raw --local` 实测接受此历史 ID。`scripts/lib/local-d1.ts` 通过该命令执行 SQL，并沿用 `d1_migrations` 的已应用历史；每份迁移及其历史记录作为原子批次执行，失败回滚。生产仍用 `cf d1 migrations apply <D1_DATABASE_ID> --dir migrations`。R2 本地操作显式传 `--persist-to .wrangler/state`。不要删除、重命名或迁移开发者现有存储目录。
+
+2026-10-26 的 pnpm 发布等待期例外仅覆盖 `pnpm-workspace.yaml` 列出的六个精确版本；完整依赖按锁文件安装。依据：[官方构建后端和 mode](https://developers.cloudflare.com/cf/projects/)、[cf beta.23 发布记录](https://github.com/cloudflare/cf/releases/tag/cf%401.0.0-beta.23)。迁移证据和限制见 [迁移记录](cf-migration.md)。
 
 ## 迭代
 

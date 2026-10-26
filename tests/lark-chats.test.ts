@@ -5,9 +5,8 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { after, before, beforeEach, test } from "node:test";
-import { createTestHarness } from "wrangler";
 import type { LarkChatMembers, LarkChatPage, Me, PostDetail } from "../src/web/api";
-import { testWorkerConfig } from "./support/config.ts";
+import { createRuntime } from "./support/runtime.ts";
 
 // Exercise the real Worker and D1 against a local Lark HTTP stub. No real app
 // credentials, directory sync, notifications or production data are involved.
@@ -24,8 +23,7 @@ const upstream = createServer((req, res) => {
   assert.equal(req.headers.authorization, "Bearer test-token");
   res.end(JSON.stringify(reply(url)));
 });
-const server = createTestHarness();
-const worker = server.getWorker<Env>();
+const { server, worker } = createRuntime();
 let env: Env;
 let larkBaseUrl: string;
 const vars = {
@@ -49,15 +47,8 @@ before(
     await once(upstream, "listening");
     const { port } = upstream.address() as { port: number };
     larkBaseUrl = `http://127.0.0.1:${port}`;
-    await server.update({
-      workers: [
-        {
-          config: testWorkerConfig({ ...vars, LARK_BASE_URL: larkBaseUrl, LARK_APP_SECRET: "test-secret" }),
-        },
-      ],
-    });
+    await server.setVars({ ...vars, LARK_BASE_URL: larkBaseUrl, LARK_APP_SECRET: "test-secret" });
     await server.listen();
-    await worker.applyD1Migrations("DB");
     env = await worker.getEnv();
   },
   { timeout: 30_000 },
@@ -201,16 +192,7 @@ test("invalid IDs cannot alter the upstream path; broken pagination fails instea
 
 test("roster deployments and missing Lark credentials hide and reject group access", async () => {
   for (const overrides of [{ DIRECTORY_SOURCE: "roster" }, { LARK_APP_ID: "" }]) {
-    await server.update((options) => ({
-      ...options,
-      workers: [
-        {
-          ...required(options.workers[0]),
-          vars: { ...vars, LARK_BASE_URL: larkBaseUrl, ...overrides },
-          secrets: { LARK_APP_SECRET: "test-secret" },
-        },
-      ],
-    }));
+    await server.setVars({ ...vars, LARK_BASE_URL: larkBaseUrl, ...overrides, LARK_APP_SECRET: "test-secret" });
     assert.equal(((await (await request("/api/me")).json()) as Me).config.larkChats, false);
     assert.equal((await request("/api/lark/chats")).status, 409);
     assert.equal((await request("/api/lark/chats/oc_group/members")).status, 409);

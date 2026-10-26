@@ -6,12 +6,12 @@
     "dev": "node scripts/dev.ts",
     "demo:seed": "node scripts/seed-demo.ts",
     "build:web": "node scripts/build-web.ts",
-    "build": "pnpm run build:web && cf build",
+    "build": "pnpm run build:web && DO_NOT_TRACK=1 CF_SEND_TELEMETRY=false WRANGLER_SEND_METRICS=false cf build --mode development",
     "doctor": "node scripts/config.ts doctor",
     "config": "node scripts/config.ts",
     "roster:push": "node scripts/push-roster.ts",
     "deploy": "./scripts/deploy.sh",
-    "types": "cf workers types",
+    "types": "DO_NOT_TRACK=1 CF_SEND_TELEMETRY=false WRANGLER_SEND_METRICS=false cf workers types --mode development",
     "typecheck": "pnpm run types && tsc --noEmit && tsc --noEmit -p src/server && tsc --noEmit -p tests",
     "test:integration": "node scripts/test.ts integration",
     "test:avatars": "node --test tests/avatars.test.ts",
@@ -39,6 +39,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.6.3",
     "@cloudflare/config": "0.28.1",
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.5",
     "@playwright/test": "1.64.1",
     "@tailwindcss/postcss": "4.3.3",
     "@types/canvas-confetti": "1.9.0",
@@ -47,10 +48,11 @@
     "@types/react-dom": "19.3.0",
     "cf": "1.0.0-beta.23",
     "esbuild": "0.28.1",
+    "miniflare": "5.20261023.0-beta",
     "postcss": "8.5.31",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
-    "wrangler": "4.148.0"
+    "vite": "8.3.5"
   },
   "packageManager": "pnpm@12.15.0",
   "engines": {

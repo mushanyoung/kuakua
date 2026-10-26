@@ -1,3 +1,4 @@
+import "./lib/privacy.ts";
 // Uploads ROSTER_FILE and the avatar files it references to the R2 bucket under roster/,
 // then roster/_version (a hash of all of them) — the Worker re-syncs when that changes.
 // Unchanged files aren't re-uploaded (local/roster-uploaded.json remembers what went up).

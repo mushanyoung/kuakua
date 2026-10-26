@@ -3,20 +3,12 @@ import { required } from "../src/shared/required.ts";
 
 import assert from "node:assert/strict";
 import { after as afterAll, before as beforeAll, beforeEach, test } from "node:test";
-import { createTestHarness } from "wrangler";
 import { MAX_AVATAR_BYTES } from "../src/shared/avatars.ts";
 import type { User } from "../src/web/api";
-import { testWorkerConfig } from "./support/config.ts";
+import { createRuntime } from "./support/runtime.ts";
 
 // Real Workers runtime, isolated local D1/R2, no Cloudflare account or production data.
-const server = createTestHarness({
-  workers: [
-    {
-      config: testWorkerConfig({ DEV_AUTH_EMAIL: "admin@example.com", ADMIN_EMAILS: "admin@example.com", EMAIL_NOTIFY: "0" }),
-    },
-  ],
-});
-const worker = server.getWorker<Env>();
+const { server, worker } = createRuntime({ DEV_AUTH_EMAIL: "admin@example.com", ADMIN_EMAILS: "admin@example.com", EMAIL_NOTIFY: "0" });
 let env: Env;
 let serverUrl: URL;
 const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="), (c) =>
@@ -31,7 +23,6 @@ const customKeys = async () => (await env.FILES.list({ prefix: "custom-avatars/"
 beforeAll(
   async () => {
     ({ url: serverUrl } = await server.listen());
-    await worker.applyD1Migrations("DB");
     env = await worker.getEnv();
   },
   { timeout: 30_000 },

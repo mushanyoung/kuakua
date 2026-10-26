@@ -3,13 +3,12 @@ import { required } from "../src/shared/required.ts";
 // people and posts: `pnpm run demo:seed`. Builds them in a scratch SQLite file with the D1
 // schema, then loads that into local D1. Never touches a deployed database.
 
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { REACTIONS, values } from "../src/shared/values.ts";
-import { writeLocalWranglerConfig } from "./lib/local-wrangler.ts";
+import { applyLocalMigrations, localSql } from "./lib/local-d1.ts";
 import { exportRows } from "./lib/sqlite-export.ts";
 import { LOCAL_STATE } from "./lib/worker-config.ts";
 
@@ -154,24 +153,12 @@ for (const at of times) {
   if (rand() < 0.3) insertComment.run({ post, user: pick(ids), body: pick(comments), at: at + 5000 });
 }
 const sql = exportRows(db);
-const file = join(scratch, "demo.sql");
-writeFileSync(file, sql);
 db.close();
 // A separate state directory lets CI validate seeding without replacing a developer's data.
 const persistTo = process.argv.find((arg) => arg.startsWith("--persist-to="))?.slice("--persist-to=".length) ?? LOCAL_STATE;
 try {
-  const config = await writeLocalWranglerConfig();
-  for (const command of [
-    ["d1", "migrations", "apply", "DB"],
-    ["d1", "execute", "DB", "--file", file, "--yes"],
-  ]) {
-    const result = spawnSync("pnpm", ["exec", "wrangler", ...command, "-c", config, "--local", "--persist-to", persistTo], {
-      cwd: ROOT,
-      stdio: ["ignore", "ignore", "inherit"],
-    });
-    if (result.error) throw result.error;
-    if (result.status !== 0) throw new Error("Loading demo data into local D1 failed");
-  }
+  applyLocalMigrations(persistTo);
+  localSql(sql, persistTo);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

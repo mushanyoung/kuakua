@@ -14,6 +14,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { directorySourceOf, isRequired, SETTINGS, type Setting, settingByKey } from "../src/server/settings.ts";
+import "./lib/privacy.ts";
 import { required } from "../src/shared/required.ts";
 import { parseValues } from "../src/shared/values.ts";
 import { cloudflareEnv, ENV_FILE, effective, fileValues, ROOT, readEnvFile, setValue, splitList } from "./lib/env.ts";
@@ -145,7 +146,7 @@ function doctor() {
     const mode = statSync(cf.file).mode & 0o777;
     if (mode & 0o077) warn(`${cf.file} is readable by others; chmod 600 it`);
   }
-  for (const tool of ["cf", "wrangler"]) {
+  for (const tool of ["cf"]) {
     if (existsSync(join(ROOT, `node_modules/.bin/${tool}`))) ok(`${tool} is installed`);
     else fail(`${tool} is not installed — run pnpm install`);
   }

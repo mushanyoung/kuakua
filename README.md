@@ -41,7 +41,7 @@ pnpm run config list                  # 查看配置（密钥打码）；set KEY
 ./scripts/cloudflare-setup.sh        # 准备 D1、R2、Access（幂等）
 ./scripts/deploy.sh                  # 部署 / 拉代码后重新部署
 node scripts/push-roster.ts           # 只上传改过的名单和头像
-pnpm exec wrangler tail <WORKER_NAME>   # 线上实时日志
+# 线上实时日志：Cloudflare Dashboard → Workers & Pages → 目标 Worker → Logs → Live
 ```
 
 ## Lark 应用需要的权限（`DIRECTORY_SOURCE=lark`）

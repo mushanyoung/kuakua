@@ -3,19 +3,13 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { resolve } from "node:path";
 
-import { writeLocalWranglerConfig } from "./lib/local-wrangler.ts";
-import { LOCAL_STATE } from "./lib/worker-config.ts";
+import { applyLocalMigrations } from "./lib/local-d1.ts";
 
 const cwd = resolve(import.meta.dirname, "..");
-const config = await writeLocalWranglerConfig();
-for (const args of [
-  ["exec", "wrangler", "d1", "migrations", "apply", "DB", "-c", config, "--local", "--persist-to", LOCAL_STATE],
-  ["run", "build:web"],
-]) {
-  if (spawnSync("pnpm", args, { cwd, stdio: "inherit" }).status !== 0) process.exit(1);
-}
+applyLocalMigrations();
+if (spawnSync("pnpm", ["run", "build:web"], { cwd, stdio: "inherit" }).status !== 0) process.exit(1);
 const web = spawn(process.execPath, ["scripts/build-web.ts", "--watch"], { cwd, stdio: "inherit" });
-const worker = spawn("pnpm", ["exec", "cf", "dev"], {
+const worker = spawn("pnpm", ["exec", "cf", "dev", "--mode", "development"], {
   cwd,
   stdio: "inherit",
 });

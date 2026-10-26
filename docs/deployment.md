@@ -143,14 +143,17 @@ pnpm run doctor
 | 改品质标签                           | 改 `VALUES_FILE` 指向的文件 → `./scripts/deploy.sh`。已用过的标签 id 不要删改，否则旧帖子上的标签不再显示                                                       |
 | 换域名                               | `config set PUBLIC_URL ...` → `./scripts/cloudflare-setup.sh` → `./scripts/deploy.sh`                                                                           |
 
-部署脚本先构建网页，再执行 `cf build --mode production`，随后记还原点、应用迁移、上传名单，最后发布这次构建产物。生产配置直接从 `.env.production` / `settings.ts` 生成，不再生成或读取 `local/wrangler.json`；旧文件可留存但不再生效。密钥由权限 600 的临时 `local/.secrets.json` 通过 `--secrets-file` 上传，退出时删除。已有 D1/R2 资源由 setup 脚本准备，发布使用 `--no-provision`。
+部署脚本先构建网页，再执行 `cf build --mode production`，随后记还原点、应用迁移、上传名单，最后发布这次构建产物。生产配置直接从 `.env.production` / `settings.ts` 生成，不读取旧打包配置。密钥由权限 600 的临时 `local/.secrets.json` 通过 `--secrets-file` 上传，退出时删除。已有 D1/R2 资源由 setup 脚本准备，发布使用 `--no-provision`。
+
+运维步骤使用 cf 管理 D1、R2、Access、DNS 查询与 Email Sending。唯一保留的直接 API 是 setup 原有的 Worker Custom Domain 归属只读检查：cf beta.23 未提供该查询，用户已明确允许保留；脚本内有注释，不包装成 cf 命令。邮件域名独立查找所属 zone，只有显式 `--enable-email` 才创建发信域名与 DNS 记录。
 
 仅验证生产打包时可在构建网页后执行 `pnpm exec cf deploy --mode production --dry-run`；这会读取本地部署配置，但不发布。正常开发检查使用开发模式，无需线上凭据。
 
 ## 回滚与排障
 
-- 实时日志：`pnpm exec wrangler tail <WORKER_NAME>`（cf 尚不支持实时日志；使用部署配置里的 Worker 名）。
-- 回滚代码：`pnpm exec wrangler rollback --name <WORKER_NAME>`（回到上一个版本），或 `git checkout <commit>` → `./scripts/deploy.sh`。
+- 实时日志：Cloudflare Dashboard → Workers & Pages → 目标 Worker → Logs → Live。cf 尚不支持终端实时日志；用户已确认改用 Dashboard，不启用新的日志或 traces 配置。
+- 回滚代码：先 `pnpm exec cf workers deployments list --worker <WORKER_NAME>` 读回历史并确认目标版本 UUID，再 `pnpm exec cf workers deployments create --worker <WORKER_NAME> --strategy percentage --versions '[{"version_id":"<确认的版本 UUID>","percentage":100}]'`。先加 `--dry-run` 核对请求；实际回滚需要目标环境授权。不能把 deployment ID 当 version ID。
+- 重新构建旧提交也可恢复旧代码，但 `deploy.sh` 包含数据库迁移和名单上传；先确认与现存 schema、绑定、secrets 的兼容性。Git revert 或代码版本回滚均不会回滚 D1/R2 数据、Access 或 DNS。
 - 回滚数据：每次部署前的 D1 还原点记在 `local/last-deploy` 第三列；`pnpm exec cf d1 time-travel restore <D1_DATABASE_ID> --bookmark <还原点>`。D1 自带 30 天内任意时刻的还原（付费版；免费版 7 天）。
 - 有人登录后看到 `email_domain_not_allowed`：他的邮箱不在名单 / Lark 通讯录、`ALLOWED_EMAIL_DOMAINS`、`ADMIN_EMAILS` 里。
 - 被 Cloudflare 登录页拦住：重跑 `./scripts/cloudflare-setup.sh`（名单变了要更新 Access 策略），检查 Zero Trust 里的登录方式。
