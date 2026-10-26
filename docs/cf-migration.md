@@ -2,7 +2,7 @@
 
 2026-10-26，从 `0ec0bb1` 迁移，分支 `codex/cf-only-migration`。使用 Node 26.12.1 / pnpm 12.15.0；cf 固定为当日 registry latest `1.0.0-beta.23`，满足其 Node engines。构建采用官方无 Wrangler 依赖的 Vite 插件 `2.0.0-beta.v.5`，Vite `8.3.5`；Miniflare 固定 `5.20261023.0-beta`。
 
-完整本地质量检查已通过；独立依赖仓库的干净重建待执行。线上验收尚未完成，没有远端写入。
+本地迁移已验证，线上验收尚未完成。实现提交 `4d23970`；完整质量检查和独立依赖仓库的干净重建均通过，没有远端写入。
 
 ## 迁移矩阵
 
@@ -51,7 +51,7 @@
 - `cf workers deployments create ... --dry-run`：核对了 Worker 名、version UUID、百分比及 API 请求。`cf d1 migrations apply <测试 UUID> --dir migrations --dry-run` 仅验证参数，未声称它验证了远端数据库。
 - `bash -n scripts/cloudflare-setup.sh scripts/deploy.sh`：通过。
 - `pnpm list --depth Infinity --json` 与完整 `pnpm-lock.yaml`：均无 Wrangler 包。可执行脚本、CI、测试和程序化 import 无 Wrangler 调用；实际构建输出明确显示 `Delegating to pnpm vite build`，无 `wrangler.config.ts`。
-- 独立 store、无旧 node_modules/构建缓存、限制 PATH 的重建：待执行。
+- 从提交 `4d23970` 建立临时 detached worktree，使用空的独立 pnpm store 和 cache；PATH 仅含固定 node/pnpm/jq 与系统工具，`command -v wrangler` 失败。重新 frozen install、执行完整 `pnpm run check`（58 个测试）及依赖树扫描全部通过；确认没有 Wrangler binary/package/config。临时 worktree/store 已删除，证据为 `test-results/clean-check.log`。
 
 本地证据在 `test-results/check.log`、`unit.xml`、`integration.xml`、`cli.xml`、`e2e.xml`、`cf-dev.log`、`rollback-dry-run.json` 和 `d1-dry-run.json`。这些是本次实际运行产物，不入 git；长期证据是本页和可重跑的测试。GitHub Actions：未执行，不等同于本地检查通过。
 
@@ -71,4 +71,4 @@ pnpm run doctor                         # 只读部署体检
 
 需要目标环境授权后才执行 `pnpm run deploy`、`scripts/cloudflare-setup.sh`、`pnpm run roster:push` 或回滚命令；它们会写远端资源/配置/数据。先读回账户、Worker、D1/R2、域名与版本，再执行 Access 登录、通知、目录同步和安全测试对象的持久性 smoke tests。本次均未执行。
 
-线上验收和真实资源关联仍未验证。代码 Git revert 不回滚 D1/R2/Access/DNS，旧版本须兼容现存 schema、bindings 和 secrets；数据库回退按部署前还原点另行操作。除用户批准的日志入口与一个既有只读 API 例外外，没有降低功能或验证标准。三层 Wrangler 清理已落实；干净重建后再确认完整的本地迁移状态。
+线上验收和真实资源关联仍未验证。代码 Git revert 不回滚 D1/R2/Access/DNS，旧版本须兼容现存 schema、bindings 和 secrets；数据库回退按部署前还原点另行操作。除用户批准的日志入口与一个既有只读 API 例外外，没有降低功能或验证标准。入口层、构建层、依赖层均已清除 Wrangler，并通过干净重建。现存 `.wrangler/state` 名称、关闭 metrics 的环境变量，以及不可修改的历史 SQL 注释不是 Wrangler 调用。没有未解决的本地 blocker；部署、远端 CI 和线上验收仍待相应执行与授权。
