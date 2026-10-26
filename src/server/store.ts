@@ -144,6 +144,13 @@ export async function setPrefs(userId: number, prefs: { lang?: unknown; emailNot
 
 // ---------------------------------------------------------------- directory
 
+export async function activeLarkUsersByOpenIds(openIds: string[]) {
+  return toUsers(await db.all<UserRow>(
+    `${USER_SELECT} WHERE u.active = 1 AND u.source = 'lark' AND u.open_id IN (SELECT value FROM json_each($ids))`,
+    { ids: JSON.stringify(openIds) },
+  ));
+}
+
 export async function listUsers(viewer: Viewer) {
   const [users, received, departments] = await db.batch([
     q(`${USER_SELECT} WHERE u.active = 1 ORDER BY u.name COLLATE NOCASE`),

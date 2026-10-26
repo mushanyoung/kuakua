@@ -12,6 +12,12 @@ const log = (...args: unknown[]) => console.log("[lark]", ...args);
 
 type LarkBody<T> = { code: number; msg: string; data?: T; tenant_access_token?: string; expire?: number };
 
+export class LarkApiError extends Error {
+  constructor(public code: number, message: string) {
+    super(message);
+  }
+}
+
 // Cached per Worker instance; concurrent callers share one in-flight request.
 let token: { value: string; expiresAt: number } | null = null;
 let tokenRequest: Promise<string> | null = null;
@@ -35,7 +41,7 @@ async function fetchTenantToken() {
   return token.value;
 }
 
-async function lark<T>(method: string, path: string, query?: Record<string, string | string[] | undefined>, body?: unknown) {
+export async function lark<T>(method: string, path: string, query?: Record<string, string | string[] | undefined>, body?: unknown) {
   const url = new URL(config.lark.baseUrl + path);
   for (const [k, v] of Object.entries(query ?? {})) {
     if (v === undefined || v === "") continue;
@@ -66,7 +72,7 @@ async function lark<T>(method: string, path: string, query?: Record<string, stri
       await sleep(Math.min(8000, 500 * 2 ** attempt));
       continue;
     }
-    if (json.code !== 0) throw new Error(`${method} ${path} → ${json.code} ${json.msg}`);
+    if (!res.ok || json.code !== 0) throw new LarkApiError(json.code, `${method} ${path} → ${json.code} ${json.msg}`);
     return json.data as T;
   }
 }

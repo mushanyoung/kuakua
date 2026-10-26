@@ -1903,6 +1903,82 @@ a.group-chip:hover {
   text-overflow: ellipsis;
   max-width: 45%;
 }
+.lark-picker {
+  margin: -2px 0 10px;
+}
+.lark-chat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.lark-chat-toggle:hover {
+  color: var(--text);
+}
+.lark-chat-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.lark-chat-panel .hint,
+.lark-chat-notice {
+  display: block;
+  margin: 0 0 10px;
+  line-height: 1.6;
+}
+.lark-chat-notice {
+  margin: 8px 0 0;
+}
+.lark-chat-search {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+}
+.lark-chat-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0;
+  margin: 8px 0 0;
+  list-style: none;
+}
+.lark-chat-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 8px;
+  border-radius: 10px;
+  text-align: left;
+}
+.lark-chat-list button:hover:not(:disabled),
+.lark-chat-list button:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+}
+.lark-chat-list button:disabled {
+  opacity: 0.5;
+}
+.lark-chat-list span {
+  min-width: 0;
+}
+.lark-chat-list b,
+.lark-chat-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lark-chat-list small {
+  margin-top: 2px;
+  color: var(--text-3);
+}
+.composer .recipient-limit {
+  margin: -10px 0 20px;
+}
 .value-grid {
   display: flex;
   flex-wrap: wrap;

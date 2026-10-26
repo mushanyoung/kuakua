@@ -87,6 +87,9 @@ export const ADMIN_EMAILS: ReadonlySet<string> = new Set(config.adminEmails);
 
 export const larkEnabled = () => Boolean(config.lark.appId && config.lark.appSecret);
 
+// Chat members are matched to the open_ids saved by the Lark directory sync.
+export const larkChatsEnabled = () => larkEnabled() && config.directory.source === "lark";
+
 // Lark DMs go to people by their Lark open_id, which only the Lark directory sync knows.
 export const larkNotifyEnabled = () => larkEnabled() && config.lark.notify && config.directory.source === "lark";
 

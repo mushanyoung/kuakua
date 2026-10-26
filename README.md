@@ -11,6 +11,7 @@
   - **名单文件**（`DIRECTORY_SOURCE=roster`）：一份 CSV/JSON，列出邮箱、姓名、部门、职务、上级和头像；上传后网站一分钟内自动同步
   - **Lark / 飞书通讯录**（`DIRECTORY_SOURCE=lark`）：每天自动同步同事、部门、头像（只下载变了的头像），并发 Lark 通知
 - 夸夸墙、表情回应（含一键 +1）、评论、个人主页、个人夸夸链接
+- 接入 Lark / 飞书通讯录后，可在“夸谁”下选择机器人已加入的群，完整展开为同事，再逐一删除；自动去重并跳过已抄送的人（Peer Bonus 也跳过自己）。未同步或已停用的成员会提示跳过数量；超过每条 20 人时需手动删减后发送。
 - 抄送：被抄送的人能看到这条感谢（接了 Lark 时会收到通知）但不算被夸；默认推荐被夸同事的上级和你自己的上级
 - 秘密夸：只有发送人、被夸的人和抄送的人能看到（夸夸墙、详情、个人主页、评论、表情都按这个过滤；别人打开链接是 404），不广播到群、不进首页关系图；首页总数、光荣榜和 Peer Bonus 报表这些不含内容的统计仍然计入
 - 可以夸自己、抄送自己（Peer Bonus 不能发给自己）；夸自己不计入光荣榜和"最常感谢 TA 的人"
@@ -71,8 +72,11 @@ bunx wrangler tail -c local/wrangler.json   # 线上实时日志
 | `contact:user.department:readonly`、`contact:department.base:readonly` | 部门 |
 | `contact:user.employee:readonly` | 职务、入职时间（可选） |
 | `im:message:send_as_bot` + 开启机器人能力 | 被夸时发通知（可选） |
+| `im:chat:read`、`im:chat.members:read` + 开启机器人能力 | 从群聊展开被夸同事（可选，与通知开关独立） |
 
 并把 **通讯录权限范围** 设为「全部成员」，然后发布新版本。离职或移出范围的同事会自动隐藏，但历史感谢保留。
+
+群聊选人复用 `LARK_APP_ID` / `LARK_APP_SECRET`，需 `DIRECTORY_SOURCE=lark`。开通上述两项群权限并发布应用后，把应用机器人加入需要使用的群。站点内已登录用户可以选择这些群；当前使用应用身份，范围为[机器人所在的群](https://open.feishu.cn/document/server-docs/group/chat/list)，[读取群成员](https://open.feishu.cn/document/server-docs/group/chat-member/get)也要求机器人在群内。缺少权限时会显示配置提示，仍可手动选人。选群只用于填写被夸名单，通知继续按现有配置发送。
 
 ## 本地开发
 
@@ -82,4 +86,5 @@ bun run demo:seed      # 本地 D1 填演示数据（24 位假同事、64 条感
 bun run dev            # http://127.0.0.1:4381 ，本地 D1/R2，以 mushan@example.com（管理员）身份登录
 bun run typecheck
 bun run test:avatars  # 本地 Workers / D1 / R2 头像回归测试（使用 Node.js）
+bun run test:lark-chats # 群聊选人接口回归测试（本地 Lark stub + Workers / D1）
 ```

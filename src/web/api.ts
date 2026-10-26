@@ -18,6 +18,10 @@ export type User = {
 
 export type Users = Record<number, User>;
 
+export type LarkChat = { id: string; name: string; description: string };
+export type LarkChatPage = { chats: LarkChat[]; nextCursor: string | null };
+export type LarkChatMembers = { users: Users; skipped: number; nextCursor: string | null };
+
 export type Post = {
   id: number;
   kind: "kudos" | "bonus";
@@ -50,6 +54,7 @@ export type Me = {
     bonusPoints: number;
     notify: ("lark" | "email")[];
     directory: "lark" | "roster";
+    larkChats: boolean;
     timezone: string;
     values: ValueTag[];
   };
@@ -67,7 +72,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+export async function api<T>(path: string, init?: { method?: string; body?: unknown; signal?: AbortSignal }): Promise<T> {
   let res: Response;
   const body = init?.body;
   const binary = body instanceof Blob;
@@ -77,6 +82,7 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
       headers: body !== undefined ? { "Content-Type": binary ? body.type || "application/octet-stream" : "application/json" } : undefined,
       body: binary ? body : body !== undefined ? JSON.stringify(body) : undefined,
       credentials: "same-origin",
+      signal: init?.signal,
     });
   } catch {
     throw new ApiError("network", 0);

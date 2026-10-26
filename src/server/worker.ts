@@ -1,8 +1,9 @@
 import { authenticate } from "./auth";
 import { removeAvatar, serveAvatar, uploadAvatar } from "./avatars";
-import { config, emailNotifyEnabled, larkNotifyEnabled, notifyChannels } from "./config";
+import { config, emailNotifyEnabled, larkChatsEnabled, larkNotifyEnabled, notifyChannels } from "./config";
 import { directoryConfigured, maybeSync, syncDirectory, syncRunning } from "./directory";
 import { sendTestEmail } from "./email";
+import { larkChatMembers, listLarkChats } from "./lark-chats";
 import { langOf, notifyPost } from "./notify";
 import * as store from "./store";
 import { HttpError, type Viewer } from "./store";
@@ -63,6 +64,7 @@ async function me(viewer: Viewer) {
       // How people thanked or CC'd are notified: "lark", "email".
       notify: notifyChannels(),
       directory: config.directory.source,
+      larkChats: larkChatsEnabled(),
       timezone: config.timezone,
       values: values(),
     },
@@ -75,6 +77,10 @@ route("GET", "/api/me", ({ viewer }) => me(viewer));
 route("PUT", "/api/me/prefs", async ({ req, viewer }) => store.setPrefs(viewer.id, await body(req)));
 
 route("GET", "/api/users", ({ viewer }) => store.listUsers(viewer));
+route("GET", "/api/lark/chats", ({ url }) => listLarkChats(url.searchParams.get("cursor") || undefined));
+route("GET", "/api/lark/chats/:id/members", ({ params, url }) =>
+  larkChatMembers(params.id!, url.searchParams.get("cursor") || undefined),
+);
 route("GET", "/api/users/:id", ({ params, viewer }) => store.profile(params.id === "me" ? viewer.id : (intParam(params.id) ?? 0), viewer));
 route("PUT", "/api/users/:id/avatar", ({ req, params, viewer }) =>
   uploadAvatar(params.id === "me" ? viewer.id : (intParam(params.id) ?? 0), viewer, req),

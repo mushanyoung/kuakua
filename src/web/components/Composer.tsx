@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from "react";
 import confetti from "canvas-confetti";
 import { ChatBubbleLeftRightIcon, GiftIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { BellAlertIcon, LockClosedIcon } from "@heroicons/react/20/solid";
-import { altName, api, type PostDetail, type Allowance, type User } from "../api";
+import { altName, api, type PostDetail, type Allowance, type User, type Users } from "../api";
 import { channelsText, errorText } from "../i18n";
 import { useApp, type ComposerPrefill } from "../state";
 import { LIMITS, values } from "../../shared/values";
 import { Avatar, ValueChip } from "./ui";
+import { LarkChatPicker } from "./LarkChatPicker";
 
 const HEART = confetti.shapeFromPath({
   path: "M167 72c19-38 37-56 75-56 42 0 76 33 76 75 0 76-76 151-151 227-76-76-151-151-151-227 0-42 33-75 75-75 38 0 57 18 76 56z",
@@ -30,7 +31,7 @@ function matches(u: User, q: string) {
 }
 
 export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onClose: () => void }) {
-  const { me, setMe, t, lang, loadDirectory, directory, users, name, bumpFeed, toast, mergeUsers } = useApp();
+  const { me, setMe, t, loadDirectory, users, bumpFeed, toast, mergeUsers } = useApp();
   const allowance = me.allowance;
   const points = me.config.bonusPoints;
   const [kind, setKind] = useState<"kudos" | "bonus">(prefill?.kind ?? "kudos");
@@ -40,6 +41,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   const [valueTag, setValueTag] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingChat, setLoadingChat] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const ccRef = useRef<HTMLInputElement>(null);
@@ -82,8 +84,19 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   const tooExpensive = kind === "bonus" && cost > allowance.remaining;
   const tooShort = kind === "bonus" && message.trim().length < LIMITS.messageMinBonus;
   const selfBonus = kind === "bonus" && recipientIds.includes(me.user.id);
-  const canSend = n > 0 && message.trim().length > 0 && !tooExpensive && !tooShort && !selfBonus && !busy;
+  const tooManyRecipients = n > LIMITS.recipientsMax;
+  const canSend = n > 0 && message.trim().length > 0 && !tooExpensive && !tooShort && !selfBonus && !tooManyRecipients && !busy && !loadingChat;
 
+  function addChatMembers(members: Users, skipped: number) {
+    mergeUsers(members);
+    const ids = Object.values(members)
+      .filter((u) => !recipientIds.includes(u.id) && !ccIds.includes(u.id) && (kind !== "bonus" || u.id !== me.user.id))
+      .map((u) => u.id);
+    // Keep the complete selection, even over the send limit, so the sender decides
+    // whom to remove. Never silently truncate a group to its first 20 people.
+    setRecipientIds((prev) => [...new Set([...prev, ...ids])]);
+    return t("composer.larkChatAdded", { n: ids.length }) + (skipped ? ` ${t("composer.larkChatSkipped", { n: skipped })}` : "");
+  }
 
   function insertIdea(text: string) {
     setMessage((m) => (m ? `${m}${m.endsWith(" ") || m.endsWith("\n") ? "" : " "}${text}` : text));
@@ -100,6 +113,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
     e?.preventDefault();
     if (!canSend) {
       if (!n) setError(t("err.recipients_required"));
+      else if (tooManyRecipients) setError(t("err.too_many_recipients"));
       else if (!message.trim()) setError(t("err.message_required"));
       else if (selfBonus) setError(t("err.no_self_bonus"));
       else if (tooShort) setError(t("composer.minBonus", { n: LIMITS.messageMinBonus }));
@@ -164,8 +178,9 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
         </div>
 
         <label className="field-label" htmlFor="composer-to">
-          {t("composer.to")}
+          {t("composer.to")} {n > 0 && <small>{n}/{LIMITS.recipientsMax}</small>}
         </label>
+        {me.config.larkChats && <LarkChatPicker onAdd={addChatMembers} onBusyChange={setLoadingChat} disabled={busy} />}
         <PeoplePicker
           id="composer-to"
           value={recipientIds}
@@ -177,6 +192,9 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           inputRef={searchRef}
           suggest={suggestTo}
         />
+        {tooManyRecipients && <p className="form-error recipient-limit" role="alert">
+          {t("composer.recipientLimit", { n, max: LIMITS.recipientsMax })}
+        </p>}
         <label className="field-label" htmlFor="composer-cc">
           {t("composer.cc")} <small>{me.config.notify.length ? t("composer.ccHintNotify", { channels: channelsText(t, me.config.notify) }) : t("composer.ccHint")}</small>
         </label>
@@ -258,7 +276,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
               t("composer.shortcut")
             )}
           </span>
-          <button ref={submitRef} type="submit" className="btn primary" disabled={busy}>
+          <button ref={submitRef} type="submit" className="btn primary" disabled={busy || loadingChat || tooManyRecipients}>
             {busy ? t("composer.submitting") : t("composer.submit")}
           </button>
         </div>
@@ -326,7 +344,7 @@ function PeoplePicker({
           {name(users[uid])}
           <button
             type="button"
-            aria-label="remove"
+            aria-label={t("composer.removePerson", { name: name(users[uid]) })}
             onClick={(e) => (e.stopPropagation(), onChange(value.filter((x) => x !== uid)))}
           >
             <XMarkIcon />
@@ -341,7 +359,7 @@ function PeoplePicker({
         onChange={(e) => (setQuery(e.target.value), setCursor(0))}
         onKeyDown={onKey}
         onFocus={() => setFocused(true)}
-        onBlur={() => setTimeout(() => setFocused(false), 120)}
+        onBlur={() => setFocused(false)}
         placeholder={value.length ? "" : placeholder}
       />
       {focused && (

@@ -11,7 +11,8 @@
     "deploy": "./scripts/deploy.sh",
     "types": "wrangler types src/server/worker-configuration.d.ts --strict-vars=false",
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/server",
-    "test:avatars": "node --test tests/avatars.test.ts"
+    "test:avatars": "node --test tests/avatars.test.ts",
+    "test:lark-chats": "node --test tests/lark-chats.test.ts"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
