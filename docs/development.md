@@ -8,6 +8,8 @@
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
+pnpm run check
 pnpm run demo:seed
 pnpm run dev
 ```
@@ -21,7 +23,7 @@ pnpm run dev
 1. 确定可独立验证和回退的小单元，先准备可运行路径及适用检查。
 2. 实现与正常调试；业务行为变更包含相应测试，命令、架构、操作变化同步文档。
 3. 执行适用检查，通过即实际提交。提交说明目的，不混入无关变更或部署文件。
-4. 交付前执行完整质量门槛，分别报告本地结果和 GitHub Actions 实际状态。没有运行的写“未执行”。
+4. 交付前执行 `pnpm run check` 完整质量门槛，分别报告本地结果和 GitHub Actions 实际状态。没有运行的写“未执行”。
 
 不安排独立 code review 或 reviewer agent，不配置 AI 自动审查。此约束不影响正常调试、测试和问题修复。
 

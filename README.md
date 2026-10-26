@@ -68,7 +68,11 @@ pnpm exec wrangler tail -c local/wrangler.json   # 线上实时日志
 pnpm install --frozen-lockfile
 pnpm run demo:seed      # 本地 D1 填演示数据（24 位假同事、64 条感谢）
 pnpm run dev            # http://127.0.0.1:4381 ，本地 D1/R2，以 mushan@example.com（管理员）身份登录
+pnpm exec playwright install chromium
+pnpm run check        # 格式、lint、strict、unit、集成、e2e、生产构建
 pnpm run typecheck
 pnpm run test:avatars  # 本地 Workers / D1 / R2 头像回归测试（使用 Node.js）
 pnpm run test:lark-chats # 群聊选人接口回归测试（本地 Lark stub + Workers / D1）
 ```
+
+完整命令、覆盖范围、CI 和失败诊断见 [测试策略](docs/testing.md)。GitHub Actions 在 push / pull_request 执行相同检查。

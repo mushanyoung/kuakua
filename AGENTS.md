@@ -26,12 +26,16 @@
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm exec playwright install chromium  # 首次准备浏览器
+pnpm run check               # 全部质量门槛，与 CI 相同
 pnpm run dev                 # 本地网页与 Worker，127.0.0.1:4381
 pnpm run demo:seed           # 替换本地 D1 为演示数据
 pnpm run format:check        # Biome 格式检查
 pnpm run lint                # recommended，警告也失败
 pnpm run typecheck           # 独立 strict 类型检查
+pnpm run test:unit           # 核心规则与边界
 pnpm run test:integration    # 本地 Workers / D1 / R2 回归
+pnpm run test:e2e            # 桌面与移动端浏览器流程（先 build）
 pnpm run build              # 网页生产构建 + Worker dry-run 打包
 pnpm run doctor             # 只读部署配置体检
 ```

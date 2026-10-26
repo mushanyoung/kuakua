@@ -12,14 +12,17 @@
     "roster:push": "node scripts/push-roster.ts",
     "deploy": "./scripts/deploy.sh",
     "types": "wrangler types src/server/worker-configuration.d.ts --strict-vars=false",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p src/server",
-    "test:integration": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/server && tsc --noEmit -p tests",
+    "test:integration": "node scripts/test.ts integration",
     "test:avatars": "node --test tests/avatars.test.ts",
     "test:lark-chats": "node --test tests/lark-chats.test.ts",
     "format": "biome format --write .",
     "format:check": "biome format . --error-on-warnings",
     "lint": "biome lint . --error-on-warnings",
-    "lint:fix": "biome check --write . --error-on-warnings"
+    "lint:fix": "biome check --write . --error-on-warnings",
+    "test:unit": "node scripts/test.ts unit",
+    "test:e2e": "playwright test",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:unit && pnpm run build && pnpm run test:integration && pnpm run test:e2e"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "5.3.0",
@@ -34,6 +37,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.3",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/postcss": "4.3.3",
     "@types/canvas-confetti": "1.9.0",
     "@types/node": "26.6.5",

@@ -12,7 +12,7 @@ export async function putAvatar(key: string, bytes: Uint8Array) {
   await env.FILES.put(key, bytes, { httpMetadata: { contentType: sniff(bytes) } });
 }
 
-export async function shortHash(data: string | Uint8Array) {
+export async function shortHash(data: string | Uint8Array<ArrayBuffer>) {
   const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-1", bytes));
   return [...digest.slice(0, 6)].map((b) => b.toString(16).padStart(2, "0")).join("");

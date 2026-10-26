@@ -2,17 +2,12 @@ import { required } from "../shared/required.ts";
 import { isValueId, LIMITS, REACTIONS } from "../shared/values";
 import { ADMIN_EMAILS, config, isAllowedEmail } from "./config";
 import { db, q } from "./db";
+import { HttpError } from "./errors.ts";
+import { type NewPost, preparePost } from "./post-rules.ts";
 import { periodBounds, periodOf, type Range, rangeStart } from "./time";
 
-export class HttpError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message?: string,
-  ) {
-    super(message ?? code);
-  }
-}
+export { HttpError } from "./errors.ts";
+export type { NewPost } from "./post-rules.ts";
 
 export type UserRow = {
   id: number;
@@ -359,47 +354,19 @@ export async function postDetail(id: number, viewer: Viewer) {
   };
 }
 
-export type NewPost = {
-  kind: string;
-  recipientIds: unknown;
-  ccIds?: unknown;
-  message: unknown;
-  valueTag?: unknown;
-  private?: unknown;
-};
-
 export async function createPost(input: NewPost, viewer: Viewer) {
-  const kind = input.kind === "bonus" ? "bonus" : input.kind === "kudos" ? "kudos" : null;
-  if (!kind) throw new HttpError(400, "bad_kind");
-  const message = typeof input.message === "string" ? input.message.trim() : "";
-  if (!message) throw new HttpError(400, "message_required");
-  if (message.length > LIMITS.messageMax) throw new HttpError(400, "message_too_long");
-  if (kind === "bonus" && message.length < LIMITS.messageMinBonus) throw new HttpError(400, "message_too_short");
-  const valueTag = typeof input.valueTag === "string" && isValueId(input.valueTag) ? input.valueTag : null;
-
-  const ids = Array.isArray(input.recipientIds) ? [...new Set(input.recipientIds.map(Number))] : [];
-  if (!ids.length || ids.some((n) => !Number.isInteger(n))) throw new HttpError(400, "recipients_required");
-  if (ids.length > LIMITS.recipientsMax) throw new HttpError(400, "too_many_recipients");
-  // Kudos to yourself is fine; points to yourself are not.
-  if (kind === "bonus" && ids.includes(viewer.id)) throw new HttpError(400, "no_self_bonus");
-
-  // CC'd people are only notified; anyone already a recipient is dropped. The sender may CC themselves.
-  const ccIds = Array.isArray(input.ccIds) ? [...new Set(input.ccIds.map(Number))].filter((n) => !ids.includes(n)) : [];
-  if (ccIds.some((n) => !Number.isInteger(n))) throw new HttpError(400, "cc_not_found");
-  if (ccIds.length > LIMITS.ccMax) throw new HttpError(400, "too_many_cc");
+  const { kind, message, valueTag, ids, ccIds, points, cost } = preparePost(input, viewer.id, config.bonus.points);
 
   const found = await usersByIds([...ids, ...ccIds]);
   if (ids.some((id) => !found[id]?.active)) throw new HttpError(400, "recipient_not_found");
   if (ccIds.some((id) => !found[id]?.active)) throw new HttpError(400, "cc_not_found");
 
-  const points = kind === "bonus" ? config.bonus.points : 0;
-  const cost = points * ids.length;
   const now = Date.now();
   const period = periodOf(now);
 
-  // One atomic batch. The post is only inserted if the sender still has the allowance;
-  // recipients and CC attach to "this sender's post created at $now", so they're skipped
-  // too when it wasn't.
+  // One atomic batch. Each child insert requires the preceding statement to have
+  // inserted rows (every valid post has recipients). A rejected send must not attach
+  // people to another post from the same sender and millisecond.
   const params = { sender: viewer.id, now };
   const thisPost = "(SELECT id FROM posts WHERE sender_id = $sender AND created_at = $now ORDER BY id DESC LIMIT 1)";
   const [inserted] = await db.batch([
@@ -423,14 +390,20 @@ export async function createPost(input: NewPost, viewer: Viewer) {
         allowance: config.bonus.monthlyAllowance,
       },
     ),
-    q(`INSERT INTO post_recipients (post_id, user_id) SELECT ${thisPost}, value FROM json_each($ids) WHERE ${thisPost} IS NOT NULL`, {
-      ...params,
-      ids: JSON.stringify(ids),
-    }),
-    q(`INSERT INTO post_cc (post_id, user_id) SELECT ${thisPost}, value FROM json_each($ids) WHERE ${thisPost} IS NOT NULL`, {
-      ...params,
-      ids: JSON.stringify(ccIds),
-    }),
+    q(
+      `INSERT INTO post_recipients (post_id, user_id) SELECT ${thisPost}, value FROM json_each($ids) WHERE changes() > 0 AND ${thisPost} IS NOT NULL`,
+      {
+        ...params,
+        ids: JSON.stringify(ids),
+      },
+    ),
+    q(
+      `INSERT INTO post_cc (post_id, user_id) SELECT ${thisPost}, value FROM json_each($ids) WHERE changes() > 0 AND ${thisPost} IS NOT NULL`,
+      {
+        ...params,
+        ids: JSON.stringify(ccIds),
+      },
+    ),
   ]);
   const id = (required(inserted).results[0] as { id: number } | undefined)?.id;
   if (!id) throw new HttpError(409, "insufficient_allowance");
