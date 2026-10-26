@@ -1,9 +1,9 @@
 // Reading and writing the deployment's .env.production (or $ENV_FILE), shared by the scripts.
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { settingByKey } from "../../src/server/settings";
+import { settingByKey } from "../../src/server/settings.ts";
 
-export const ROOT = resolve(import.meta.dir, "../..");
+export const ROOT = resolve(import.meta.dirname, "../..");
 export const ENV_FILE = resolve(ROOT, process.env.ENV_FILE ?? ".env.production");
 
 export type Line = { key: string; value: string } | { raw: string };

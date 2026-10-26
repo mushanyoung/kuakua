@@ -4,7 +4,7 @@
 # (.env.production, the credentials file, local/), so pulling never touches it.
 #
 #   1. shows what changed since the last deploy
-#   2. installs dependencies, runs `bun run doctor` and stops if anything is missing or wrong
+#   2. installs dependencies, runs `pnpm run doctor` and stops if anything is missing or wrong
 #   3. builds the web app and writes local/wrangler.json from .env.production
 #   4. notes a D1 Time Travel bookmark (restore point), then applies D1 migrations
 #   5. uploads the roster and its avatars (DIRECTORY_SOURCE=roster)
@@ -12,7 +12,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-conf() { bun scripts/config.ts get "$1" --raw; }
+conf() { node scripts/config.ts get "$1" --raw; }
 
 if [[ ! -f .env.production ]]; then
   echo "No .env.production yet. Configure the deployment first (AGENTS.md → first deployment)." >&2
@@ -55,36 +55,36 @@ else
 fi
 
 # 2. Dependencies and configuration
-echo "==> bun install"
-bun install --frozen-lockfile
+echo "==> pnpm install"
+pnpm install --frozen-lockfile
 echo "==> doctor"
-if ! bun scripts/config.ts doctor; then
-  echo "Fix the problems above (bun run config set KEY VALUE), then re-run scripts/deploy.sh." >&2
+if ! node scripts/config.ts doctor; then
+  echo "Fix the problems above (pnpm run config set KEY VALUE), then re-run scripts/deploy.sh." >&2
   exit 1
 fi
 
 # 3. Build
 echo "==> build"
-bun scripts/build-web.ts
-CONFIG="$(bun scripts/config.ts wrangler-config)"
+node scripts/build-web.ts
+CONFIG="$(node scripts/config.ts wrangler-config)"
 
 # 4. Database
-BOOKMARK="$(bunx wrangler d1 time-travel info "$NAME" --json -c "$CONFIG" 2>/dev/null | jq -r '.bookmark // empty' || true)"
+BOOKMARK="$(pnpm exec wrangler d1 time-travel info "$NAME" --json -c "$CONFIG" 2>/dev/null | jq -r '.bookmark // empty' || true)"
 [[ -n "$BOOKMARK" ]] && echo "==> D1 restore point before this deploy: $BOOKMARK"
 echo "==> D1 migrations"
-bunx wrangler d1 migrations apply "$NAME" --remote -c "$CONFIG"
+pnpm exec wrangler d1 migrations apply "$NAME" --remote -c "$CONFIG"
 
 # 5. Roster
-if [[ "$(bun -e 'import { directorySourceOf } from "./src/server/settings"; import { fileValues } from "./scripts/lib/env"; console.log(directorySourceOf(fileValues()))')" == "roster" ]]; then
+if [[ "$(node -e 'import { directorySourceOf } from "./src/server/settings.ts"; import { fileValues } from "./scripts/lib/env.ts"; console.log(directorySourceOf(fileValues()))')" == "roster" ]]; then
   echo "==> roster"
-  bun scripts/push-roster.ts
+  node scripts/push-roster.ts
 fi
 
 # 6. Worker
 echo "==> wrangler deploy"
-SECRETS="$(bun scripts/config.ts secrets-file)"
+SECRETS="$(node scripts/config.ts secrets-file)"
 trap '[[ -n "${SECRETS:-}" ]] && rm -f "$SECRETS"' EXIT
-bunx wrangler deploy -c "$CONFIG" ${SECRETS:+--secrets-file "$SECRETS"}
+pnpm exec wrangler deploy -c "$CONFIG" ${SECRETS:+--secrets-file "$SECRETS"}
 
 echo "$COMMIT $(date -Iseconds) ${BOOKMARK:-}" >"$STATE"
 echo "==> Deployed $COMMIT to $PUBLIC_URL (Worker $NAME)"

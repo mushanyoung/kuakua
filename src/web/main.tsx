@@ -39,7 +39,7 @@ function Nav() {
               </Link>
             ))}
           </nav>
-          <div className="nav-right">
+          <div className="nav-right flex items-center">
             <button type="button" className="lang-btn" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
               {t("lang.switch")}
             </button>

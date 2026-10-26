@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // Local development only (`bun run dev`): local D1 + R2 under .wrangler/state.
+  // Local development only (`pnpm run dev`): local D1 + R2 under .wrangler/state.
   // Deployments use local/wrangler.json, generated from .env.production by scripts/deploy.sh.
   "name": "kuakua-dev",
   "main": "src/server/worker.ts",

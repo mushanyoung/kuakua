@@ -28,8 +28,8 @@ for arg in "$@"; do
   esac
 done
 
-conf() { bun scripts/config.ts get "$1" --raw; }
-for tool in curl jq bun; do command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 1; }; done
+conf() { node scripts/config.ts get "$1" --raw; }
+for tool in curl jq node pnpm; do command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 1; }; done
 
 CF_FILE="${CLOUDFLARE_ENV_FILE:-$(conf CLOUDFLARE_ENV_FILE)}"
 if [[ -f "$CF_FILE" ]]; then
@@ -98,7 +98,7 @@ policy_id="$(cf GET "$ACCT/access/policies?per_page=500" | jq -r --arg n "$POLIC
 if [[ -n "$app" ]] && ! jq -e --arg pid "$policy_id" '$pid != "" and (.policies // [] | map(.id) | index($pid))' <<<"$app" >/dev/null; then
   echo "access: app for $HOST exists ($(jq -r .id <<<"$app")) with its own policies ($(jq -r '[.policies[]?.name] | join(", ")' <<<"$app")); leaving them as they are" >&2
 else
-  include="$(bun scripts/config.ts access-include)"
+  include="$(node scripts/config.ts access-include)"
   [[ "$(jq length <<<"$include")" -gt 0 ]] || { echo "Nobody would be allowed in: set ADMIN_EMAILS / ALLOWED_EMAIL_DOMAINS / a roster" >&2; exit 1; }
   policy_body="$(jq -n --arg n "$POLICY_NAME" --argjson inc "$include" '{name: $n, decision: "allow", include: $inc, session_duration: "24h"}')"
   if [[ -n "$policy_id" ]]; then
@@ -151,13 +151,13 @@ fi
 if [[ "$(conf EMAIL_NOTIFY)" == "1" ]]; then
   MAIL_FROM="$(conf EMAIL_FROM)"
   MAIL_DOMAIN="${MAIL_FROM#*@}"
-  if listing="$(bunx wrangler email sending list 2>&1)"; then
+  if listing="$(pnpm exec wrangler email sending list 2>&1)"; then
     if grep -qF "$MAIL_DOMAIN" <<<"$listing"; then
       echo "email: $MAIL_DOMAIN is onboarded to Email Sending" >&2
     elif [[ "$ENABLE_EMAIL" == 1 ]]; then
-      bunx wrangler email sending enable "$MAIL_DOMAIN" >&2
+      pnpm exec wrangler email sending enable "$MAIL_DOMAIN" >&2
       echo "email: onboarded $MAIL_DOMAIN; DNS records:" >&2
-      bunx wrangler email sending dns get "$MAIL_DOMAIN" >&2 || true
+      pnpm exec wrangler email sending dns get "$MAIL_DOMAIN" >&2 || true
     else
       echo "email: $MAIL_DOMAIN isn't onboarded to Email Sending yet. Onboarding adds MX + SPF on cf-bounce.$MAIL_DOMAIN," >&2
       echo "       DKIM at cf-bounce._domainkey.$MAIL_DOMAIN and DMARC at _dmarc.$MAIL_DOMAIN (if one exists, keep just one)." >&2
@@ -170,7 +170,7 @@ if [[ "$(conf EMAIL_NOTIFY)" == "1" ]]; then
 fi
 
 # 6. App settings
-bun scripts/config.ts set CF_ACCESS_TEAM_DOMAIN "$TEAM_DOMAIN" >&2
-bun scripts/config.ts set CF_ACCESS_AUD "$(jq -r .aud <<<"$app")" >&2
-bun scripts/config.ts set D1_DATABASE_ID "$DB_ID" >&2
+node scripts/config.ts set CF_ACCESS_TEAM_DOMAIN "$TEAM_DOMAIN" >&2
+node scripts/config.ts set CF_ACCESS_AUD "$(jq -r .aud <<<"$app")" >&2
+node scripts/config.ts set D1_DATABASE_ID "$DB_ID" >&2
 echo "done: next, scripts/deploy.sh" >&2

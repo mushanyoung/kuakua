@@ -1,158 +1,46 @@
-# AGENTS.md — 部署与维护指南
+# 夸夸：Agent 入口
 
-给负责部署、升级、改配置的 agent 看的。和人沟通用对方的语言；命令、配置项名保持原样。
+你是 coco，Mushan 的 Agent，默认中文沟通。每次任务先读取本文件，再仅按目标路径和当前任务需要读取沿途目录的 `AGENTS.md` 与下列资料；不要预先遍历所有文档。
 
-夸夸跑在 Cloudflare 上：一个 Worker（接口 + 网页）、D1（数据库）、R2（头像和上传的名单）、Cloudflare Access（登录）。没有需要维护的服务器；任何装了这个仓库和凭据的电脑都能部署。
+## 项目与职责
 
-## 先记住这几条
+团队内部 Kudos / Peer Bonus 应用：React 网页 + Cloudflare Worker API、D1、R2、Access。`src/server/` 负责权限与业务规则，`src/web/` 负责交互，`src/shared/` 放共享约定，`scripts/` 负责本地开发与部署。运维提供部署配置与凭据，Agent 负责实现、测试和同步文档。
 
-- **部署相关的一切都在 git 之外**，`git pull` 不会碰它们：
-  - `.env.production` 部署配置（含密钥，权限 600）
-  - `.env.cloudflare` Cloudflare API 凭据（`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`；也可以用 `CLOUDFLARE_ENV_FILE` 指向别处）
-  - `local/` 名单 `roster.csv`、头像、`values.json`，以及脚本生成的 `wrangler.json`、上次部署记录
-- **不要为了某个部署改代码或提交上面这些文件。** 需要新的可配置项时，在 `src/server/settings.ts` 里声明（见文末"改代码"）。
-- 所有配置项的唯一来源是 `src/server/settings.ts`；`.env.example` 是从它生成的。部署时，`deploy.sh` 把其中给 Worker 的项变成 Worker 的变量和密钥。
-- 工具：
-  - `bun run doctor` 体检配置：缺什么、错什么、有哪些新配置项还没确认过（只读，随时可跑）
-  - `bun run config set KEY VALUE` / `unset KEY` 改配置（`list` / `get KEY` 查看，密钥会打码）
-  - `./scripts/cloudflare-setup.sh` 准备 Cloudflare 账号里的 D1、R2、Access（幂等）
-  - `./scripts/deploy.sh` 部署或重新部署（幂等）
+## 技术约束
 
-## 任务 A：首次部署（新的 Cloudflare 账号）
+- TypeScript `strict`；Node.js **26.12.1**、pnpm **12.15.0**（`.node-version`、`package.json`）。使用 Tailwind CSS，保留项目主题 CSS；线上仍是 Workers runtime。
+- 依赖只用 pnpm，提交 `pnpm-lock.yaml`，本地与 CI 均按锁文件安装；版本升级同步配置与文档。
+- 配置唯一声明源为 `src/server/settings.ts`。`.env.production`、`.env.cloudflare`、`local/` 不入 git，不写死部署方的信息。
 
-### 0. 准备
+## 工作方式与质量门槛
 
-一台装了 git、curl、jq、[bun](https://bun.sh)（≥ 1.4）的电脑（Linux / macOS）。
+- 简述实施顺序后直接推进；常规选择自行判断。只在信息缺失实质影响目标或范围时提问，并继续不受影响的工作。
+- 新工作先建立最小可运行骨架和质量检查，再逐步实现可验收功能。拆成小而完整、可独立验证和回退的单元；每个单元通过适用检查后，**实际创建 Git commit**，提交信息说明目的。
+- 每个 commit 只聚焦一个目的，包含代码、测试及必要文档。行为、命令或架构改变时同一 commit 更新现行文档，删除过时内容；历史材料移入 `docs/archive/`，模块规则写入对应目录的 `AGENTS.md`。
+- Biome recommended 统一格式与 lint，警告和错误均须修复；strict 类型检查、核心规则/边界/异常的 unit tests、主要流程 e2e 和生产构建均是交付门槛。
+- 禁止靠关闭规则、跳过测试或放宽断言掩盖问题；必要例外须限定范围并就地说明理由、在测试策略中记录。
+- 正常调试和验证照常进行。**禁止任何独立代码审查**：不得启动 reviewer agent、安排额外 code review 任务或添加 AI 自动审查工作流。
+- 交付简述实现、Git commits、实际检查结果及未解决阻塞；本地结果与 GitHub Actions 实际状态分开报告，未执行的明确写“未执行”。
 
-```bash
-git clone <repo> kuakua && cd kuakua
-bun install
+## 常用命令
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run dev                 # 本地网页与 Worker，127.0.0.1:4381
+pnpm run demo:seed           # 替换本地 D1 为演示数据
+pnpm run typecheck           # 独立 strict 类型检查
+pnpm run test:integration    # 本地 Workers / D1 / R2 回归
+pnpm run build              # 网页生产构建 + Worker dry-run 打包
+pnpm run doctor             # 只读部署配置体检
 ```
 
-### 1. 和运维人员逐项确认配置
+## 按任务读取
 
-先跑 `bun run doctor`，它会列出每一项。下面这些需要问人，问清楚后用 `bun run config set KEY VALUE` 写进去：
-
-| 要问的 | 写到 | 说明 |
-|---|---|---|
-| 网站地址 | `PUBLIC_URL` | `https://<hostname>`；hostname 所在的域名必须在他们的 Cloudflare 账号里 |
-| 管理员邮箱 | `ADMIN_EMAILS` | 逗号分隔；管理员能同步名单、导出 Peer Bonus 报表、看光荣榜、删任何帖子 |
-| 人员名单来源 | `DIRECTORY_SOURCE` | `roster`（一份名单文件）或 `lark`（Lark/飞书通讯录每日同步，需要 `LARK_*`） |
-| 名单文件 | `ROSTER_FILE` | 默认 `./local/roster.csv`。格式见下文；向对方要名单和头像 |
-| 额外允许登录的邮箱域名 | `ALLOWED_EMAIL_DOMAINS` | 可空。空 = 只有名单里的人和管理员能登录 |
-| 时区 | `APP_TIMEZONE` | 每月 1 日零点重置 Peer Bonus 额度 |
-| 品质标签 | `VALUES_FILE` | 可空（用内置 8 个）；要自定义就照 `deploy/values.example.json` 写到 `local/values.json` |
-| Peer Bonus 额度 | `BONUS_MONTHLY_ALLOWANCE`、`BONUS_POINTS` | 每人每月可送出的积分、每份给每人的积分 |
-| 数据放在哪 | `DATA_LOCATION` | D1 和 R2 的区域；用户在亚洲就填 `apac`。只在第一次创建时生效 |
-| 同一账号多个部署？ | `WORKER_NAME` | 每个部署一个名字（D1、R2 跟着它命名） |
-| Lark 每日同步时间 | `SYNC_CRON` | UTC 的 cron，默认 `0 19 * * *`（北京时间凌晨 3 点） |
-| 邮件通知 | `EMAIL_NOTIFY`、`EMAIL_FROM`、`EMAIL_FROM_NAME` | 开了（`1`）就给被夸、被抄送的人发邮件，名单和 Lark 两种来源都能用；发件地址的域名要先开通发信，见下文"邮件通知" |
-
-`doctor` 里 "Not in the config file yet" 下列出的项，即使用默认值也请 `config set` 一次写进文件——这样以后升级时，新增的配置项才会单独显眼地出现在这个列表里。
-
-#### 名单格式（`DIRECTORY_SOURCE=roster`）
-
-CSV，第一行是表头，列顺序随意，只有 `email`、`name` 必填。也可以用同样字段的 JSON 数组（文件名以 `.json` 结尾）。示例：`deploy/roster.example.csv`。
-
-| 列 | 说明 |
-|---|---|
-| `email` | 登录邮箱（Cloudflare Access 用它识别人），不区分大小写，不能重复 |
-| `name` | 显示名 |
-| `en_name` | 英文名（英文界面用） |
-| `department` / `department_en` | 部门及英文名 |
-| `title` | 职务 |
-| `manager` | 上级的邮箱（抄送时会推荐"TA 的上级"） |
-| `avatar` | 头像：名单文件所在文件夹里的相对路径（如 `avatars/alice.jpg`），或 https 链接。JPEG/PNG/WebP/GIF，建议 ≤ 640px 方图；没有就用渐变色首字头像 |
-
-`#` 开头的行会被忽略。名单和头像由 `deploy.sh`（或单独的 `bun scripts/push-roster.ts`）上传，网站一分钟内自动同步：新人出现、改名生效、从名单里删掉的人被停用（历史感谢保留）。名单有任何错误时整份不生效，错误显示在管理页。
-
-### 2. Cloudflare
-
-请运维人员：
-
-1. 在 Cloudflare 账号里打开一次 **Zero Trust**，起一个 team 名，并在 Settings → Authentication 加一个登录方式（One-time PIN 最简单，Google 等也可以）。
-2. 打开 **R2**（免费额度够用）。用 Lark 同步的部署建议开 **Workers 付费版**（$5/月）：免费版每次运行只能发 50 个外部请求，Lark 全量同步不够。
-3. 创建一个 API Token（My Profile → API Tokens → Create Custom Token），权限：
-   - Account › Workers Scripts: Edit
-   - Account › D1: Edit
-   - Account › Workers R2 Storage: Edit
-   - Account › Access: Apps and Policies: Edit
-   - Account › Access: Organizations, Identity Providers, and Groups: Read
-   - Account › Account Settings: Read
-   - Zone › Workers Routes: Edit、Zone › DNS: Edit（网站域名所在的 zone）
-4. 把它写进 `.env.cloudflare`（`chmod 600`）：
-   ```
-   CLOUDFLARE_API_TOKEN=...
-   CLOUDFLARE_ACCOUNT_ID=...
-   ```
-
-然后：
-
-```bash
-./scripts/cloudflare-setup.sh
-```
-
-它会建/复用 D1、R2、Access 策略和应用，并把 `CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`、`D1_DATABASE_ID` 写进 `.env.production`。如果 hostname 上有冲突的 DNS 记录，脚本会停止；先在 Cloudflare DNS 处理这些记录，再重跑。
-
-### 邮件通知（可选，`EMAIL_NOTIFY=1`）
-
-走 Cloudflare Email Service，不需要第三方邮件服务。被夸的人和被抄送的人各收一封（按各自的界面语言；秘密夸会注明"仅相关的人可见"），直接回复就是回复发送人；每个人可以在自己的主页关掉。发送人平时不收邮件，只有把自己放进被夸或抄送里时才收一封（作为副本）。
-
-`EMAIL_FROM` 的域名要先在 Cloudflare 开通 Email Sending。开通会加这些 DNS 记录：
-
-- `cf-bounce.<域名>` 上的 MX 和 SPF（退信用；**不碰**域名本身的 MX，公司邮箱照常收信）
-- `cf-bounce._domainkey.<域名>` 的 DKIM（和已有的 DKIM 记录并存）
-- `_dmarc.<域名>` 的 DMARC——这是唯一和域名本身重叠的一条：如果已经有 DMARC 记录，开通后确认只剩一条
-
-所以根域名（如 `kudos@example.com`）和子域名（如 `kudos@notify.example.com`）都可以；子域名的好处只是把这类通知邮件的发信信誉和公司日常邮件分开。
-
-开通方式二选一：在 Cloudflare 后台 Email Service → Email Sending → Onboard Domain；或给 API Token 加上 Email Sending 的编辑权限后跑 `./scripts/cloudflare-setup.sh --enable-email`（不带这个参数时脚本只检查、不改 DNS）。部署后在管理页"通知"里点"给我发一封测试邮件"验证。
-
-### 3. 部署
-
-```bash
-bun run doctor        # 必须没有 ✗
-./scripts/deploy.sh
-```
-
-Wrangler 成功发布 Worker 后，脚本会记录本次部署。让管理员打开网站登录验证：管理页的"名单同步 / Lark 通讯录同步"显示成功、人数对得上（Lark 模式可点"立即同步"，不用等到夜里）。
-
-## 任务 B：升级（拉了新代码之后）
-
-```bash
-git pull --ff-only
-bun run doctor
-```
-
-- 有 ✗：通常是新版本加了必填项，按提示问人、`config set`。
-- 有 "is not a known setting"：新版本不再用这一项，确认后 `bun run config unset KEY`。
-- "Not in the config file yet" 里有新出现的项：新版本加的可选配置。向运维人员说明它是什么、默认值是什么，按他们的选择 `config set`（保留默认也写一次）。
-- 如果改了 `ADMIN_EMAILS`、`ALLOWED_EMAIL_DOMAINS`、名单里的邮箱或 `PUBLIC_URL`：重跑 `./scripts/cloudflare-setup.sh`。
-
-然后 `./scripts/deploy.sh`。它会先列出自上次部署以来的提交（读一下，告诉运维人员这次更新了什么），再装依赖、体检、打包、记下数据库还原点、迁移数据库结构、上传名单、发布 Worker 并记录本次部署。
-
-## 任务 C：日常改配置
-
-| 想做的事 | 怎么做 |
-|---|---|
-| 加人 / 删人 / 改名 / 换上级 / 换头像 | 改名单文件和头像 → `bun scripts/push-roster.ts`（或整个 `./scripts/deploy.sh`），一分钟内生效。加删了邮箱的话再跑 `./scripts/cloudflare-setup.sh` 更新登录名单 |
-| 改 `.env.production` 里任何一项 | `bun run config set KEY VALUE` → `./scripts/deploy.sh` |
-| 开 / 关邮件通知 | `config set EMAIL_NOTIFY 1`（及 `EMAIL_FROM`）→ `./scripts/cloudflare-setup.sh` 检查发信域名 → `./scripts/deploy.sh` → 管理页发测试邮件 |
-| 改品质标签 | 改 `VALUES_FILE` 指向的文件 → `./scripts/deploy.sh`。已用过的标签 id 不要删改，否则旧帖子上的标签不再显示 |
-| 换域名 | `config set PUBLIC_URL ...` → `./scripts/cloudflare-setup.sh` → `./scripts/deploy.sh` |
-
-## 回滚与排障
-
-- 实时日志：`bunx wrangler tail -c local/wrangler.json`（`-c` 用 `deploy.sh` 生成的配置）。
-- 回滚代码：`bunx wrangler rollback -c local/wrangler.json`（回到上一个版本），或 `git checkout <commit>` → `./scripts/deploy.sh`。
-- 回滚数据：每次部署前的 D1 还原点记在 `local/last-deploy` 第三列；`bunx wrangler d1 time-travel restore <WORKER_NAME> --bookmark <还原点> -c local/wrangler.json`。D1 自带 30 天内任意时刻的还原（付费版；免费版 7 天）。
-- 有人登录后看到 `email_domain_not_allowed`：他的邮箱不在名单 / Lark 通讯录、`ALLOWED_EMAIL_DOMAINS`、`ADMIN_EMAILS` 里。
-- 被 Cloudflare 登录页拦住：重跑 `./scripts/cloudflare-setup.sh`（名单变了要更新 Access 策略），检查 Zero Trust 里的登录方式。
-
-## 改代码时
-
-- 本地开发：`bun run demo:seed`（本地 D1 填演示数据），`bun run dev`（http://127.0.0.1:4381，用本地 D1/R2，以 `wrangler.jsonc` 里的 `DEV_AUTH_EMAIL` 管理员身份登录；请求头 `X-Dev-Email` 可以切换成别人），`bun run typecheck`。
-- 改了 `wrangler.jsonc` 的绑定或变量：`bun run types` 重新生成 `src/server/worker-configuration.d.ts`。
-- 加配置项：在 `src/server/settings.ts` 声明（说明、默认值、`scope`、是否必填、校验），Worker 需要的话在 `src/server/config.ts` 用 `get("KEY")` 读（没声明的读不了），然后 `bun run config example > .env.example`。不要在代码里写死任何公司、域名、人。
-- 数据库结构：在 `migrations/` 加新的 `NNNN_xxx.sql`，不要改已有的；`deploy.sh` 会自动应用。D1 只支持 `?1` 这种参数，`src/server/db.ts` 的 `q()` 把代码里的 `$name` 转换过去。
-- D1 一次请求最多 1000 条查询（免费版 50）：批量写入用 `json_each` 的集合式语句，不要逐行循环。
+| 任务 | 必要资料 |
+| --- | --- |
+| 开发、依赖、提交 | [开发流程](docs/development.md) |
+| 模块边界、运行环境、数据流 | [架构](docs/architecture.md)、[现行决策](docs/decisions.md) |
+| 测试或质量检查 | [测试策略](docs/testing.md) |
+| 首次部署、升级、配置、回滚 | [部署指南](docs/deployment.md)；不要为了开发任务读取部署密钥 |
+| 用户功能或产品规则 | [README](README.md) |
+| 追溯已废弃方案 | 仅按需读 `docs/archive/`；历史内容不作为现行规范 |

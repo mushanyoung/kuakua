@@ -1,8 +1,8 @@
 // Every setting a deployment can put in .env.production, in one place: config.ts reads
-// defaults from here, `bun run doctor` checks a deployment against it, `bun run config`
+// defaults from here, `pnpm run doctor` checks a deployment against it, `pnpm run config`
 // edits it and generates .env.example from it, and scripts/deploy.sh turns the "worker"
 // ones into the Worker's vars (secrets into Worker secrets). Adding a setting = add it here,
-// read it in config.ts (if the Worker needs it), then `bun run config example > .env.example`.
+// read it in config.ts (if the Worker needs it), then `pnpm run config example > .env.example`.
 //
 // Kept free of imports so local scripts can load it too.
 

@@ -3,34 +3,46 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun scripts/dev.ts",
-    "demo:seed": "bunx wrangler d1 migrations apply kuakua --local && bun scripts/seed-demo.ts",
-    "build": "bun scripts/build-web.ts",
-    "doctor": "bun scripts/config.ts doctor",
-    "config": "bun scripts/config.ts",
+    "dev": "node scripts/dev.ts",
+    "demo:seed": "wrangler d1 migrations apply kuakua --local && node scripts/seed-demo.ts",
+    "build:web": "node scripts/build-web.ts",
+    "build": "pnpm run build:web && wrangler deploy --dry-run --outdir .wrangler/build --minify",
+    "doctor": "node scripts/config.ts doctor",
+    "config": "node scripts/config.ts",
+    "roster:push": "node scripts/push-roster.ts",
     "deploy": "./scripts/deploy.sh",
     "types": "wrangler types src/server/worker-configuration.d.ts --strict-vars=false",
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/server",
+    "test:integration": "node --test tests/*.test.ts",
     "test:avatars": "node --test tests/avatars.test.ts",
     "test:lark-chats": "node --test tests/lark-chats.test.ts"
   },
   "dependencies": {
-    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
-    "@fontsource-variable/figtree": "^5.3.0",
-    "@fontsource-variable/jetbrains-mono": "^5.3.0",
-    "@fontsource/instrument-serif": "^5.3.0",
-    "@heroicons/react": "^2.2.0",
-    "canvas-confetti": "^1.9.4",
-    "jose": "^6.2.12",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "@fontsource-variable/bricolage-grotesque": "5.3.0",
+    "@fontsource-variable/figtree": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource/instrument-serif": "5.3.0",
+    "@heroicons/react": "2.2.0",
+    "canvas-confetti": "1.9.4",
+    "jose": "6.2.12",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.2",
-    "@types/canvas-confetti": "^1.9.0",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
-    "typescript": "^7.0.2",
-    "wrangler": "^4.148.0"
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/canvas-confetti": "1.9.0",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.1",
+    "postcss": "8.5.31",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "wrangler": "4.148.0"
+  },
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": "26.12.1",
+    "pnpm": "12.15.0"
   }
 }

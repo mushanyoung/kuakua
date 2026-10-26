@@ -2,7 +2,7 @@
 // files it points at, since those are uploaded next to it.
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { parseRoster, type ParsedRoster } from "../../src/server/roster-file";
+import { parseRoster, type ParsedRoster } from "../../src/server/roster-file.ts";
 
 const AVATAR_WARN_BYTES = 1024 * 1024;
 

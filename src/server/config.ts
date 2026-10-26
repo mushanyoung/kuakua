@@ -1,10 +1,10 @@
 import { env } from "cloudflare:workers";
-import { directorySourceOf, settingByKey } from "./settings";
-import { parseValues, setValues } from "../shared/values";
+import { directorySourceOf, settingByKey } from "./settings.ts";
+import { parseValues, setValues } from "../shared/values.ts";
 
 // Every deployment-specific setting comes from the Worker's vars and secrets, which
 // scripts/deploy.sh generates from .env.production. settings.ts lists them with their
-// defaults; `bun run doctor` checks them.
+// defaults; `pnpm run doctor` checks them.
 
 const vars: Record<string, unknown> = Object.fromEntries(Object.entries(env));
 

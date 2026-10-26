@@ -1,23 +1,23 @@
 // Deployment configuration helper. Works on .env.production (or $ENV_FILE) and local files
 // only — never on Cloudflare — so it's safe to run any time:
 //
-//   bun run doctor                    check everything a deployment needs; exit 1 on problems
-//   bun run config list               every setting with its current value (secrets masked)
-//   bun run config get KEY [--raw]    one value (--raw: unmasked, default applied, for scripts)
-//   bun run config set KEY VALUE      write a value (creates the file with mode 600)
-//   bun run config unset KEY          remove a line (e.g. a setting a newer version dropped)
-//   bun run config example            print .env.example, generated from src/server/settings.ts
+//   pnpm run doctor                    check everything a deployment needs; exit 1 on problems
+//   pnpm run config list               every setting with its current value (secrets masked)
+//   pnpm run config get KEY [--raw]    one value (--raw: unmasked, default applied, for scripts)
+//   pnpm run config set KEY VALUE      write a value (creates the file with mode 600)
+//   pnpm run config unset KEY          remove a line (e.g. a setting a newer version dropped)
+//   pnpm run config example            print .env.example, generated from src/server/settings.ts
 //
 // Used by the deploy scripts:
-//   bun run config wrangler-config    write local/wrangler.json for this deployment
-//   bun run config secrets-file       write local/.secrets.json (Worker secrets) and print its path
-//   bun run config access-include     Cloudflare Access include rules (JSON)
+//   pnpm run config wrangler-config    write local/wrangler.json for this deployment
+//   pnpm run config secrets-file       write local/.secrets.json (Worker secrets) and print its path
+//   pnpm run config access-include     Cloudflare Access include rules (JSON)
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { directorySourceOf, isRequired, SETTINGS, settingByKey, type Setting } from "../src/server/settings";
-import { parseValues } from "../src/shared/values";
-import { cloudflareEnv, effective, ENV_FILE, fileValues, readEnvFile, ROOT, setValue, splitList } from "./lib/env";
-import { readRosterFile } from "./lib/roster";
+import { directorySourceOf, isRequired, SETTINGS, settingByKey, type Setting } from "../src/server/settings.ts";
+import { parseValues } from "../src/shared/values.ts";
+import { cloudflareEnv, effective, ENV_FILE, fileValues, readEnvFile, ROOT, setValue, splitList } from "./lib/env.ts";
+import { readRosterFile } from "./lib/roster.ts";
 
 const mask = (s: Setting, v: string) => (s.secret && v ? `(set, ${v.length} characters)` : v);
 
@@ -43,7 +43,7 @@ function doctor() {
 
   section(`Config file ${ENV_FILE}`);
   if (!existsSync(ENV_FILE)) {
-    fail("missing — create it with `bun run config set KEY VALUE` (see AGENTS.md)");
+    fail("missing — create it with `pnpm run config set KEY VALUE` (see AGENTS.md)");
   } else {
     const mode = statSync(ENV_FILE).mode & 0o777;
     if (mode & 0o077) warn(`permissions are ${mode.toString(8)}; it holds secrets — chmod 600 ${ENV_FILE}`);
@@ -81,13 +81,13 @@ function doctor() {
     else ok(`${s.key}=${mask(s, value)}${!value && s.default ? ` (default ${s.default})` : ""}`);
   }
   for (const key of seen.keys()) {
-    if (!settingByKey.has(key)) warn(`${key} is not a known setting (typo, or dropped by a newer version) — bun run config unset ${key}`);
+    if (!settingByKey.has(key)) warn(`${key} is not a known setting (typo, or dropped by a newer version) — pnpm run config unset ${key}`);
   }
   if (unreviewed.length) {
     section("Not in the config file yet (the default applies)");
     for (const s of unreviewed) console.log(`  • ${s.key} = ${s.default ? `"${s.default}"` : "(empty)"} — ${s.help}`);
     console.log("  → Review these with the operator and write each one, even to keep the default:");
-    console.log("    bun run config set KEY VALUE   (then doctor stops listing it)");
+    console.log("    pnpm run config set KEY VALUE   (then doctor stops listing it)");
   }
 
   section("Directory");
@@ -141,7 +141,7 @@ function doctor() {
     if (mode & 0o077) warn(`${cf.file} is readable by others; chmod 600 it`);
   }
   if (existsSync(join(ROOT, "node_modules/.bin/wrangler"))) ok("wrangler is installed");
-  else fail("wrangler is not installed — run bun install");
+  else fail("wrangler is not installed — run pnpm install");
 
   console.log(failures ? `\n${failures} problem(s) to fix before deploying.` : "\nReady to deploy.");
   return failures ? 1 : 0;
@@ -235,8 +235,8 @@ function example() {
   };
   const out = [
     "# kuakua deployment settings. The deployed copy is .env.production (mode 600, never committed);",
-    "# `bun run doctor` checks it and `bun run config set KEY VALUE` edits it. Generated from",
-    "# src/server/settings.ts by `bun run config example` — edit that file, not this one.",
+    "# `pnpm run doctor` checks it and `pnpm run config set KEY VALUE` edits it. Generated from",
+    "# src/server/settings.ts by `pnpm run config example` — edit that file, not this one.",
   ];
   for (const [group, title] of Object.entries(groups)) {
     out.push("", `# ---- ${title}`);
@@ -313,6 +313,6 @@ switch (cmd) {
     accessInclude();
     break;
   default:
-    console.log(readFileSync(import.meta.path, "utf8").split("\n").filter((l) => l.startsWith("//")).join("\n"));
+    console.log(readFileSync(import.meta.filename, "utf8").split("\n").filter((l) => l.startsWith("//")).join("\n"));
     process.exit(cmd ? 1 : 0);
 }

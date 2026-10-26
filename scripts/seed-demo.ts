@@ -1,16 +1,17 @@
 // Fills the local dev database (wrangler dev's D1 under .wrangler/state) with demo
-// people and posts: `bun run demo:seed`. Builds them in a scratch SQLite file with the D1
+// people and posts: `pnpm run demo:seed`. Builds them in a scratch SQLite file with the D1
 // schema, then loads that into local D1. Never touches a deployed database.
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { exportRows } from "./lib/sqlite-export";
-import { values, REACTIONS } from "../src/shared/values";
+import { exportRows } from "./lib/sqlite-export.ts";
+import { values, REACTIONS } from "../src/shared/values.ts";
 
-const ROOT = resolve(import.meta.dir, "..");
+const ROOT = resolve(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "kuakua-demo-"));
-const db = new Database(join(scratch, "demo.db"), { strict: true });
+const db = new DatabaseSync(join(scratch, "demo.db"));
 for (const f of readdirSync(join(ROOT, "migrations")).filter((f) => f.endsWith(".sql")).sort()) {
   db.exec(readFileSync(join(ROOT, "migrations", f), "utf8"));
 }
@@ -80,12 +81,12 @@ const comments = ["+1，确实太强了！", "附议 👏", "这个必须夸", "
 
 const now = Date.now();
 for (const [id, name, en] of depts) {
-  db.query("INSERT INTO departments (id, name, en_name, updated_at) VALUES ($id, $name, $en, $now)").run({ id, name, en, now });
+  db.prepare("INSERT INTO departments (id, name, en_name, updated_at) VALUES ($id, $name, $en, $now)").run({ id, name, en, now });
 }
 const ids: number[] = [];
 people.forEach(([handle, name, en, dept, title], i) => {
   const res = db
-    .query(
+    .prepare(
       `INSERT INTO users (open_id, email, name, en_name, dept_id, job_title, active, source, joined_at, created_at, updated_at)
        VALUES ($openId, $email, $name, $en, $dept, $title, 1, 'lark', $joined, $now, $now)`,
     )
@@ -106,13 +107,13 @@ let seed = 42;
 const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
 const pick = <T>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)]!;
 
-const insertPost = db.query(
+const insertPost = db.prepare(
   `INSERT INTO posts (kind, sender_id, message, value_tag, points, cost, period, created_at)
    VALUES ($kind, $sender, $message, $tag, $points, $cost, $period, $at)`,
 );
-const insertRecipient = db.query("INSERT OR IGNORE INTO post_recipients (post_id, user_id) VALUES ($post, $user)");
-const insertReaction = db.query("INSERT OR IGNORE INTO reactions (post_id, user_id, emoji, created_at) VALUES ($post, $user, $emoji, $at)");
-const insertComment = db.query("INSERT INTO comments (post_id, user_id, body, created_at) VALUES ($post, $user, $body, $at)");
+const insertRecipient = db.prepare("INSERT OR IGNORE INTO post_recipients (post_id, user_id) VALUES ($post, $user)");
+const insertReaction = db.prepare("INSERT OR IGNORE INTO reactions (post_id, user_id, emoji, created_at) VALUES ($post, $user, $emoji, $at)");
+const insertComment = db.prepare("INSERT INTO comments (post_id, user_id, body, created_at) VALUES ($post, $user, $body, $at)");
 
 const times = Array.from({ length: 64 }, () => now - Math.floor(Math.pow(rand(), 1.6) * 75 * 86400_000) - 60_000).sort((a, b) => a - b);
 for (const at of times) {
@@ -145,11 +146,12 @@ const sql = exportRows(db);
 const file = join(scratch, "demo.sql");
 writeFileSync(file, sql);
 db.close();
-const load = Bun.spawnSync(["bunx", "wrangler", "d1", "execute", "kuakua", "--local", "--file", file, "--yes"], {
+// A separate state directory lets CI validate seeding without replacing a developer's data.
+const persistTo = process.argv.find((arg) => arg.startsWith("--persist-to="))?.slice("--persist-to=".length);
+const load = spawnSync("pnpm", ["exec", "wrangler", "d1", "execute", "kuakua", "--local", "--file", file, "--yes", ...(persistTo ? ["--persist-to", persistTo] : [])], {
   cwd: ROOT,
-  stdout: "ignore",
-  stderr: "inherit",
+  stdio: ["ignore", "ignore", "inherit"],
 });
 rmSync(scratch, { recursive: true, force: true });
-if (load.exitCode !== 0) process.exit(1);
+if (load.status !== 0) process.exit(1);
 console.log(`seeded ${ids.length} people and 64 posts into the local dev database`);

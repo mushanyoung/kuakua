@@ -1,0 +1,9 @@
+engineStrict: true
+pmOnFail: error
+verifyDepsBeforeRun: error
+savePrefix: ""
+# Native binaries used by the build and the local Workers runtime.
+allowBuilds:
+  esbuild: true
+  workerd: true
+  "@tailwindcss/oxide": true

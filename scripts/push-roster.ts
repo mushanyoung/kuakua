@@ -1,12 +1,14 @@
 // Uploads ROSTER_FILE and the avatar files it references to the R2 bucket under roster/,
 // then roster/_version (a hash of all of them) — the Worker re-syncs when that changes.
 // Unchanged files aren't re-uploaded (local/roster-uploaded.json remembers what went up).
-//   bun scripts/push-roster.ts            to the deployment's bucket (run by scripts/deploy.sh)
-//   bun scripts/push-roster.ts --local    to the local dev bucket (bun run dev)
+//   node scripts/push-roster.ts            to the deployment's bucket (run by scripts/deploy.sh)
+//   node scripts/push-roster.ts --local    to the local dev bucket (pnpm run dev)
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { effective, fileValues, ROOT } from "./lib/env";
-import { imageType, readRosterFile } from "./lib/roster";
+import { effective, fileValues, ROOT } from "./lib/env.ts";
+import { imageType, readRosterFile } from "./lib/roster.ts";
 
 const local = process.argv.includes("--local");
 const env = local ? {} : fileValues();
@@ -22,7 +24,7 @@ if (roster.errors.length) {
   process.exit(1);
 }
 
-const sha1 = (bytes: Uint8Array) => new Bun.CryptoHasher("sha1").update(bytes).digest("hex");
+const sha1 = (bytes: Uint8Array) => createHash("sha1").update(bytes).digest("hex");
 const files: { key: string; path: string; type: string }[] = [];
 for (const e of roster.entries) {
   if (e.avatar?.kind === "file") files.push({ key: `roster/${e.avatar.path}`, path: resolve(roster.dir, e.avatar.path), type: imageType(resolve(roster.dir, e.avatar.path))! });
@@ -36,9 +38,9 @@ const target = `${local ? "local" : "remote"}:${bucket}`;
 const uploaded = (manifest[target] ??= {});
 
 function put(key: string, path: string, type: string) {
-  const args = ["bunx", "wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", path, "--content-type", type, local ? "--local" : "--remote", ...configArgs];
-  const res = Bun.spawnSync(args, { cwd: ROOT, stdout: "ignore", stderr: "pipe" });
-  if (res.exitCode !== 0) throw new Error(`upload ${key} failed: ${res.stderr.toString().trim()}`);
+  const args = ["exec", "wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", path, "--content-type", type, local ? "--local" : "--remote", ...configArgs];
+  const res = spawnSync("pnpm", args, { cwd: ROOT, stdio: ["ignore", "ignore", "pipe"] });
+  if (res.status !== 0) throw new Error(`upload ${key} failed: ${(res.error?.message ?? res.stderr?.toString() ?? "unknown process failure").trim()}`);
 }
 
 const seen = new Set<string>();

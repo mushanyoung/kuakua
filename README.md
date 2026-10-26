@@ -2,7 +2,7 @@
 
 团队内部互相夸夸的网站：发 **Kudos**（表扬，不限次数）或 **Peer Bonus**（附带积分，每人每月有额度）。整站跑在 Cloudflare 上（Workers + D1 + R2），由 Cloudflare Access 负责登录，没有需要维护的服务器。
 
-**部署、升级、改配置：看 [AGENTS.md](AGENTS.md)**（写给 agent 的逐步指南，人也能照着做）。
+**Agent 每次任务先读 [AGENTS.md](AGENTS.md)。** 部署、升级、改配置见 [部署指南](docs/deployment.md)，开发与工具链见 [开发流程](docs/development.md)。
 
 ## 功能
 
@@ -31,33 +31,17 @@
 
 ## 架构
 
-```
-浏览器 → Cloudflare Access（邮箱登录）→ Worker（自定义域名）
-                                         ├─ 静态资源  dist/（网页、字体，Workers Static Assets）
-                                         ├─ D1        数据库（自带 30 天时间点还原）
-                                         ├─ R2        头像、上传的名单
-                                         └─ Cron      每日同步通讯录
-```
-
-- `src/server/` Worker
-  - `worker.ts` 入口和路由；`settings.ts` 所有配置项的声明，`config.ts` 读取它们
-  - `auth.ts` 校验 `Cf-Access-Jwt-Assertion`（issuer + AUD）
-  - `store.ts` 数据层，`db.ts` D1 封装；结构在 `migrations/`
-  - `directory.ts` 名单同步调度；`roster.ts` / `roster-file.ts` 名单；`lark.ts` Lark 通讯录同步和通知；`avatars.ts` R2 头像
-- `src/web/` React 前端，部署时由 `scripts/build-web.ts` 打包到 `dist/`；字体自托管（`/fonts/*`，大陆可访问）
-- `src/shared/values.ts` 品质标签和表情回应，前后端共用
-- `scripts/` `config.ts`（`bun run doctor` / `bun run config`）、`deploy.sh`、`cloudflare-setup.sh`、`push-roster.ts`、`seed-demo.ts`（本地开发演示数据）
-- `deploy/` 名单和品质标签的示例
+TypeScript strict、React、Tailwind CSS；Node.js 26.12.1 + pnpm 12.15.0 用于开发、测试和构建。生产请求由 Cloudflare Workers 执行。模块边界和数据流见 [架构](docs/architecture.md)。
 
 ## 常用命令
 
 ```bash
-bun run doctor                       # 体检部署配置
-bun run config list                  # 查看配置（密钥打码）；set KEY VALUE / unset KEY 修改
+pnpm run doctor                       # 体检部署配置
+pnpm run config list                  # 查看配置（密钥打码）；set KEY VALUE / unset KEY 修改
 ./scripts/cloudflare-setup.sh        # 准备 D1、R2、Access（幂等）
 ./scripts/deploy.sh                  # 部署 / 拉代码后重新部署
-bun scripts/push-roster.ts           # 只上传改过的名单和头像
-bunx wrangler tail -c local/wrangler.json   # 线上实时日志
+node scripts/push-roster.ts           # 只上传改过的名单和头像
+pnpm exec wrangler tail -c local/wrangler.json   # 线上实时日志
 ```
 
 ## Lark 应用需要的权限（`DIRECTORY_SOURCE=lark`）
@@ -81,10 +65,10 @@ bunx wrangler tail -c local/wrangler.json   # 线上实时日志
 ## 本地开发
 
 ```bash
-bun install
-bun run demo:seed      # 本地 D1 填演示数据（24 位假同事、64 条感谢）
-bun run dev            # http://127.0.0.1:4381 ，本地 D1/R2，以 mushan@example.com（管理员）身份登录
-bun run typecheck
-bun run test:avatars  # 本地 Workers / D1 / R2 头像回归测试（使用 Node.js）
-bun run test:lark-chats # 群聊选人接口回归测试（本地 Lark stub + Workers / D1）
+pnpm install --frozen-lockfile
+pnpm run demo:seed      # 本地 D1 填演示数据（24 位假同事、64 条感谢）
+pnpm run dev            # http://127.0.0.1:4381 ，本地 D1/R2，以 mushan@example.com（管理员）身份登录
+pnpm run typecheck
+pnpm run test:avatars  # 本地 Workers / D1 / R2 头像回归测试（使用 Node.js）
+pnpm run test:lark-chats # 群聊选人接口回归测试（本地 Lark stub + Workers / D1）
 ```
