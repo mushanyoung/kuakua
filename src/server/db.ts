@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 
 // Thin layer over D1. D1 only binds positional ?NNN parameters; the queries in this app
 // are written with $name placeholders, which q() rewrites (the same name maps to the same
-// position, so it can repeat). Schema lives in migrations/, applied by wrangler.
+// position, so it can repeat). Schema lives in migrations/, applied by the deployment script.
 
 type Params = Record<string, unknown>;
 type Value = string | number | null | ArrayBuffer;

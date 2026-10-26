@@ -2,7 +2,9 @@
 
 2026-10-26，从 `0ec0bb1` 迁移，分支 `codex/cf-only-migration`。使用 Node 26.12.1 / pnpm 12.15.0；cf 固定为当日 registry latest `1.0.0-beta.23`，满足其 Node engines。构建采用官方无 Wrangler 依赖的 Vite 插件 `2.0.0-beta.v.5`，Vite `8.3.5`；Miniflare 固定 `5.20261023.0-beta`。
 
-本地迁移已验证，线上验收尚未完成。实现提交 `4d23970`；完整质量检查和独立依赖仓库的干净重建均通过，没有远端写入。
+本地迁移已验证；用户已确认线上验收完成。实现提交 `4d23970`，完整质量检查和独立依赖仓库的干净重建均通过。
+
+生产 Worker `kuakua` 已发布 cf 版本 `426ad865-08ec-4b43-b8fe-0c5798581403`，发布来源提交 `32c79b0`；本分支的 Worker 业务源码与该提交仅有注释差异。发布后读回确认 D1、R2 和邮件绑定，未执行数据库迁移或上传密钥。用户报告已完成线上验收；其具体操作未由本地测试记录。下文保留本地验证当时的证据和未执行事项。
 
 ## 迁移矩阵
 
@@ -71,4 +73,4 @@ pnpm run doctor                         # 只读部署体检
 
 需要目标环境授权后才执行 `pnpm run deploy`、`scripts/cloudflare-setup.sh`、`pnpm run roster:push` 或回滚命令；它们会写远端资源/配置/数据。先读回账户、Worker、D1/R2、域名与版本，再执行 Access 登录、通知、目录同步和安全测试对象的持久性 smoke tests。本次均未执行。
 
-线上验收和真实资源关联仍未验证。代码 Git revert 不回滚 D1/R2/Access/DNS，旧版本须兼容现存 schema、bindings 和 secrets；数据库回退按部署前还原点另行操作。除用户批准的日志入口与一个既有只读 API 例外外，没有降低功能或验证标准。入口层、构建层、依赖层均已清除 Wrangler，并通过干净重建。现存 `.wrangler/state` 名称、关闭 metrics 的环境变量，以及不可修改的历史 SQL 注释不是 Wrangler 调用。没有未解决的本地 blocker；部署、远端 CI 和线上验收仍待相应执行与授权。
+用户已确认线上验收完成；发布后已读回 D1、R2 和邮件绑定。代码 Git revert 不回滚 D1/R2/Access/DNS，旧版本须兼容现存 schema、bindings 和 secrets；数据库回退按部署前还原点另行操作。除用户批准的日志入口与一个既有只读 API 例外外，没有降低功能或验证标准。入口层、构建层、依赖层均已清除 Wrangler，并通过干净重建。现存 `.wrangler/state` 名称、关闭 metrics 的环境变量，以及不可修改的历史 SQL 注释不是 Wrangler 调用。没有未解决的本地 blocker；远端 CI 尚未执行。

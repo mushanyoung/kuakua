@@ -13,7 +13,7 @@ import { isPeriod, periodOf, type Range } from "./time";
 
 // Cloudflare Worker entry. Static files (the web app, fonts) are served from ./dist by
 // Workers Static Assets; only /api/* and /avatars/* reach this code
-// (assets.run_worker_first in the wrangler config).
+// (assets.runWorkerFirst in the Cloudflare config).
 
 type Ctx = { req: Request; url: URL; params: Record<string, string>; viewer: Viewer; ctx: ExecutionContext };
 type Handler = (c: Ctx) => unknown;
