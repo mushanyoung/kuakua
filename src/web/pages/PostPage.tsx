@@ -1,10 +1,11 @@
 import { ArrowLeftIcon } from "@heroicons/react/20/solid";
-import { type PostDetail } from "../api";
+import { required } from "../../shared/required.ts";
+import type { PostDetail } from "../api";
 import { PostCard } from "../components/PostCard";
 import { Empty, Spinner } from "../components/ui";
 import { errorText } from "../i18n";
 import { Link, navigate } from "../router";
-import { useApp, useApi } from "../state";
+import { useApi, useApp } from "../state";
 
 export function PostPage({ id }: { id: string }) {
   const { t } = useApp();
@@ -20,7 +21,7 @@ export function PostPage({ id }: { id: string }) {
         <PostCard
           post={res.data.post}
           openComments
-          onChange={(post) => res.setData({ ...res.data!, post })}
+          onChange={(post) => res.setData({ ...required(res.data), post })}
           onDeleted={() => navigate("/", { replace: true })}
         />
       )}

@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   BookOpenIcon,
   HeartIcon,
@@ -9,10 +8,11 @@ import {
   ViewfinderCircleIcon,
   WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { type ValueTag, valueById } from "../../shared/values";
 import { avatarSrc, type User } from "../api";
 import { Link } from "../router";
 import { useApp } from "../state";
-import { valueById, type ValueTag } from "../../shared/values";
 
 const VALUE_ICONS: Record<ValueTag["icon"], typeof HeartIcon> = {
   users: UsersIcon,
@@ -77,7 +77,7 @@ export function Avatar({
 }) {
   const { name } = useApp();
   const img = (
-    <span className={`avatar ${ring ? "ring" : ""} ${className}`} style={{ width: size, height: size }}>
+    <span className={`avatar ${ring ? "ring" : ""} ${className}`} style={{ "--avatar-size": `${size}px` } as CSSProperties}>
       {user && <img src={avatarSrc(user, size > 88 ? 640 : 240)} alt="" loading="lazy" draggable={false} />}
     </span>
   );
@@ -96,7 +96,11 @@ export function AvatarStack({ users, size = 28, max = 4 }: { users: (User | unde
       {shown.map((u, i) => (
         <Avatar key={u?.id ?? i} user={u} size={size} />
       ))}
-      {users.length > max && <span className="avatar more" style={{ width: size, height: size }}>+{users.length - max}</span>}
+      {users.length > max && (
+        <span className="avatar more" style={{ "--avatar-size": `${size}px` } as CSSProperties}>
+          +{users.length - max}
+        </span>
+      )}
     </span>
   );
 }
@@ -154,7 +158,7 @@ export function CountUp({ value, duration = 900 }: { value: number; duration?: n
     let raf = 0;
     const tick = (now: number) => {
       const p = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - p, 3);
+      const eased = 1 - (1 - p) ** 3;
       setShown(Math.round(origin + (value - origin) * eased));
       if (p < 1) raf = requestAnimationFrame(tick);
       else from.current = value;

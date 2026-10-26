@@ -1,5 +1,5 @@
-import { useId, useRef, useState } from "react";
 import { ArrowUturnLeftIcon, CameraIcon } from "@heroicons/react/20/solid";
+import { useId, useRef, useState } from "react";
 import { AVATAR_TYPES, MAX_AVATAR_BYTES } from "../../shared/avatars";
 import { api, type User } from "../api";
 import { errorText } from "../i18n";
@@ -56,7 +56,9 @@ export function AvatarEditor({ user, onChange }: { user: User; onChange: (user: 
           </button>
         )}
       </div>
-      <p id={hintId} className="muted small">{t("avatar.hint")}</p>
+      <p id={hintId} className="muted small">
+        {t("avatar.hint")}
+      </p>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { required } from "./required.ts";
 // Recognition "values" a kudos can be tagged with. Shared by server (validation,
 // Lark notifications) and web (chips, filters, profile breakdown). A deployment can
 // replace the defaults with VALUES_FILE; the server loads it and sends it to the web
@@ -25,7 +26,9 @@ export const DEFAULT_VALUES: ValueTag[] = [
 
 let current = DEFAULT_VALUES;
 export const values = () => current;
-export const setValues = (list: ValueTag[]) => void (current = list);
+export const setValues = (list: ValueTag[]) => {
+  current = list;
+};
 export const valueById = (id: string | null | undefined) => current.find((v) => v.id === id);
 export const isValueId = (id: string) => current.some((v) => v.id === id);
 
@@ -51,7 +54,7 @@ export function parseValues(raw: unknown): ValueTag[] {
       id,
       zh: zh.trim(),
       en: typeof en === "string" && en.trim() ? en.trim() : zh.trim(),
-      color: (color as string | undefined) ?? DEFAULT_VALUES[i % DEFAULT_VALUES.length]!.color,
+      color: (color as string | undefined) ?? required(DEFAULT_VALUES[i % DEFAULT_VALUES.length]).color,
       icon: (icon as ValueTag["icon"] | undefined) ?? "heart",
     };
   });

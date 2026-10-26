@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
+import { required } from "../shared/required.ts";
 import { config } from "./config";
-import { copy, nameIn, site, type Lang, type Notice } from "./notify";
+import { copy, type Lang, type Notice, nameIn, site } from "./notify";
 
 // Notification emails through Cloudflare Email Service (the EMAIL send_email binding, only
 // configured when EMAIL_NOTIFY=1). One email per person on the post — thanked or CC'd,
@@ -73,16 +74,16 @@ export async function sendEmailNotices(notices: Notice[]) {
   const results = await Promise.allSettled(
     targets.map((n) =>
       mail.send({
-        to: n.person!.email!,
+        to: required(required(n.person).email),
         from: from(),
-        ...(replyable(n) ? { replyTo: { email: n.sender.email!, name: nameIn(n.sender, n.lang) } } : {}),
+        ...(replyable(n) ? { replyTo: { email: required(n.sender.email), name: nameIn(n.sender, n.lang) } } : {}),
         subject: n.title,
         ...render(n),
       }),
     ),
   );
   results.forEach((r, i) => {
-    if (r.status === "rejected") console.error("[email]", targets[i]!.person!.email, (r.reason as Error).message);
+    if (r.status === "rejected") console.error("[email]", required(required(targets[i]).person).email, (r.reason as Error).message);
   });
 }
 
@@ -94,6 +95,12 @@ export async function sendTestEmail(to: string, lang: Lang) {
     `<h1 style="font-size:19px;margin:0 0 12px">${esc(c.testSubject)}</h1>
 <p style="font-size:15px;line-height:1.7;margin:0">${esc(c.testBody(config.email.from))}</p>${button(config.publicUrl, c.open)}`,
   );
-  const result = await mailer().send({ to, from: from(), subject: c.testSubject, html, text: `${c.testBody(config.email.from)}\n\n${config.publicUrl}` });
+  const result = await mailer().send({
+    to,
+    from: from(),
+    subject: c.testSubject,
+    html,
+    text: `${c.testBody(config.email.from)}\n\n${config.publicUrl}`,
+  });
   return result.messageId;
 }

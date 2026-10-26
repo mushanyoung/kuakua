@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { required } from "../shared/required.ts";
 import { api, type Me, type User, type Users } from "./api";
-import { makeT, type Lang, type T } from "./i18n";
+import { type Lang, makeT, type T } from "./i18n";
 
 export type Directory = { users: User[]; departments: { id: string; name: string; enName: string | null; members: number }[] };
 export type ComposerPrefill = { recipientIds?: number[]; kind?: "kudos" | "bonus" };
@@ -27,7 +28,7 @@ type AppCtx = {
 
 const Ctx = createContext<AppCtx | null>(null);
 
-export const useApp = () => useContext(Ctx)!;
+export const useApp = () => required(useContext(Ctx));
 
 export const LANG_KEY = "kuakua.lang";
 
@@ -74,8 +75,8 @@ export function AppProvider({
   const mergeUsers = useCallback((u: Users) => setUsers((prev) => ({ ...prev, ...u })), []);
   const updateUser = useCallback((u: User) => {
     setUsers((prev) => ({ ...prev, [u.id]: u }));
-    setMe((prev) => prev.user.id === u.id ? { ...prev, user: u } : prev);
-    setDirectory((prev) => prev && { ...prev, users: prev.users.map((old) => old.id === u.id ? { ...old, ...u } : old) });
+    setMe((prev) => (prev.user.id === u.id ? { ...prev, user: u } : prev));
+    setDirectory((prev) => prev && { ...prev, users: prev.users.map((old) => (old.id === u.id ? { ...old, ...u } : old)) });
     dirPromise.current = null;
   }, []);
 
@@ -134,6 +135,7 @@ export function useApi<T>(path: string | null, deps: unknown[] = []) {
     loading: Boolean(path),
   });
   const [nonce, setNonce] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: nonce and caller deps explicitly invalidate cached data.
   useEffect(() => {
     if (!path) return;
     let alive = true;
@@ -149,6 +151,8 @@ export function useApi<T>(path: string | null, deps: unknown[] = []) {
     return () => {
       alive = false;
     };
-  }, [path, nonce, ...deps]);
-  return { ...state, reload: () => setNonce((n) => n + 1), setData: (d: T) => setState((s) => ({ ...s, data: d })) };
+  }, [path, nonce, mergeUsers, ...deps]);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  const setData = useCallback((d: T) => setState((s) => ({ ...s, data: d })), []);
+  return { ...state, reload, setData };
 }

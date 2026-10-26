@@ -1,11 +1,11 @@
 import { ArrowRightIcon, BellAlertIcon } from "@heroicons/react/20/solid";
-import { type Users } from "../api";
+import type { Users } from "../api";
 import { Constellation, type GraphEdge } from "../components/Constellation";
 import { Feed } from "../components/Feed";
 import { Avatar, CountUp, UserName } from "../components/ui";
 import { channelsText, shortDate } from "../i18n";
 import { Link, navigate } from "../router";
-import { useApp, useApi } from "../state";
+import { useApi, useApp } from "../state";
 
 type Overview = {
   month: { posts: number; points: number; people: number };

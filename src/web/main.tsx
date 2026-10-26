@@ -1,7 +1,9 @@
+import { HomeIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { HomeIcon, PlusIcon } from "@heroicons/react/24/outline";
-import { api, ApiError, type Me } from "./api";
+import { required } from "../shared/required.ts";
+import { setValues } from "../shared/values";
+import { type ApiError, api, type Me } from "./api";
 import { Composer } from "./components/Composer";
 import { KuaLinkPage } from "./components/KuaLink";
 import { Avatar, HeartMark, Logo } from "./components/ui";
@@ -13,8 +15,7 @@ import { PostPage } from "./pages/PostPage";
 import { ProfilePage } from "./pages/Profile";
 import { Wall } from "./pages/Wall";
 import { Link, match, navigate, useLocation } from "./router";
-import { AppProvider, LANG_KEY, useApp, type ComposerPrefill } from "./state";
-import { setValues } from "../shared/values";
+import { AppProvider, type ComposerPrefill, LANG_KEY, useApp } from "./state";
 
 function Nav() {
   const { t, lang, setLang, me, openComposer } = useApp();
@@ -53,7 +54,7 @@ function Nav() {
         </div>
       </header>
       <nav className="tabbar">
-        <Link to="/" className={links[0]!.on ? "on" : ""}>
+        <Link to="/" className={required(links[0]).on ? "on" : ""}>
           <HomeIcon />
           <span>{t("nav.wall")}</span>
         </Link>
@@ -77,14 +78,17 @@ function Redirect({ to }: { to: string }) {
 function Routes() {
   const { path } = useLocation();
   const { t, me } = useApp();
-  let m: Record<string, string> | null;
+
   if (path === "/") return <Wall />;
   if (path === "/leaderboard") return me.isAdmin ? <Leaderboard /> : <Redirect to="/" />;
   if (path === "/people") return me.isAdmin ? <People /> : <Redirect to="/" />;
   if (path === "/admin") return <Admin />;
-  if ((m = match("/u/:id", path))) return <ProfilePage key={m.id} id={m.id!} />;
-  if ((m = match("/k/:id", path))) return <PostPage key={m.id} id={m.id!} />;
-  if ((m = match("/kua/:handle", path))) return <KuaLinkPage key={m.handle} handle={m.handle!} />;
+  const profileMatch = match("/u/:id", path);
+  if (profileMatch) return <ProfilePage key={profileMatch.id} id={required(profileMatch.id)} />;
+  const postMatch = match("/k/:id", path);
+  if (postMatch) return <PostPage key={postMatch.id} id={required(postMatch.id)} />;
+  const kuaMatch = match("/kua/:handle", path);
+  if (kuaMatch) return <KuaLinkPage key={kuaMatch.handle} handle={required(kuaMatch.handle)} />;
   return (
     <div className="page narrow">
       <h1 className="page-title">404</h1>
@@ -154,7 +158,7 @@ fonts.rel = "stylesheet";
 fonts.href = "/fonts/fonts.css";
 document.head.appendChild(fonts);
 
-const root = createRoot(document.getElementById("root")!);
+const root = createRoot(required(document.getElementById("root")));
 api<Me>("/api/me")
   .then((me) => {
     setValues(me.config.values);

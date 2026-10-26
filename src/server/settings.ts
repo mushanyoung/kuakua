@@ -218,8 +218,22 @@ export const SETTINGS: Setting[] = [
     example: "./local/values.json",
     help: "Optional JSON list of the values a thanks can be tagged with (see deploy/values.example.json); scripts/deploy.sh passes it to the Worker. Empty = the built-in eight.",
   },
-  { key: "BONUS_MONTHLY_ALLOWANCE", group: "app", scope: "worker", default: "10", help: "Peer Bonus points each person can give per month.", check: positiveInt },
-  { key: "BONUS_POINTS", group: "app", scope: "worker", default: "1", help: "Points each recipient gets per Peer Bonus.", check: positiveInt },
+  {
+    key: "BONUS_MONTHLY_ALLOWANCE",
+    group: "app",
+    scope: "worker",
+    default: "10",
+    help: "Peer Bonus points each person can give per month.",
+    check: positiveInt,
+  },
+  {
+    key: "BONUS_POINTS",
+    group: "app",
+    scope: "worker",
+    default: "1",
+    help: "Points each recipient gets per Peer Bonus.",
+    check: positiveInt,
+  },
 
   // ---- cloudflare
   {

@@ -1,3 +1,4 @@
+import { required } from "../shared/required.ts";
 import { config } from "./config";
 
 // All "this month / quarter / year" boundaries are computed in APP_TIMEZONE so the
@@ -18,7 +19,14 @@ function parts(ms: number) {
   for (const { type, value } of fmt.formatToParts(new Date(ms))) {
     if (type !== "literal") p[type] = Number(value);
   }
-  return { y: p.year!, m: p.month!, d: p.day!, h: p.hour!, mi: p.minute!, s: p.second! };
+  return {
+    y: required(p.year),
+    m: required(p.month),
+    d: required(p.day),
+    h: required(p.hour),
+    mi: required(p.minute),
+    s: required(p.second),
+  };
 }
 
 function offsetAt(ms: number) {

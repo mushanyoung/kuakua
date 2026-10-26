@@ -1,18 +1,22 @@
+import { required } from "../src/shared/required.ts";
 // Fills the local dev database (wrangler dev's D1 under .wrangler/state) with demo
 // people and posts: `pnpm run demo:seed`. Builds them in a scratch SQLite file with the D1
 // schema, then loads that into local D1. Never touches a deployed database.
-import { DatabaseSync } from "node:sqlite";
+
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { REACTIONS, values } from "../src/shared/values.ts";
 import { exportRows } from "./lib/sqlite-export.ts";
-import { values, REACTIONS } from "../src/shared/values.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "kuakua-demo-"));
 const db = new DatabaseSync(join(scratch, "demo.db"));
-for (const f of readdirSync(join(ROOT, "migrations")).filter((f) => f.endsWith(".sql")).sort()) {
+for (const f of readdirSync(join(ROOT, "migrations"))
+  .filter((f) => f.endsWith(".sql"))
+  .sort()) {
   db.exec(readFileSync(join(ROOT, "migrations", f), "utf8"));
 }
 
@@ -104,18 +108,23 @@ people.forEach(([handle, name, en, dept, title], i) => {
 });
 
 let seed = 42;
-const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-const pick = <T>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)]!;
+const rand = () => {
+  seed = (seed * 16807) % 2147483647;
+  return (seed - 1) / 2147483646;
+};
+const pick = <T>(xs: readonly T[]) => required(xs[Math.floor(rand() * xs.length)]);
 
 const insertPost = db.prepare(
   `INSERT INTO posts (kind, sender_id, message, value_tag, points, cost, period, created_at)
    VALUES ($kind, $sender, $message, $tag, $points, $cost, $period, $at)`,
 );
 const insertRecipient = db.prepare("INSERT OR IGNORE INTO post_recipients (post_id, user_id) VALUES ($post, $user)");
-const insertReaction = db.prepare("INSERT OR IGNORE INTO reactions (post_id, user_id, emoji, created_at) VALUES ($post, $user, $emoji, $at)");
+const insertReaction = db.prepare(
+  "INSERT OR IGNORE INTO reactions (post_id, user_id, emoji, created_at) VALUES ($post, $user, $emoji, $at)",
+);
 const insertComment = db.prepare("INSERT INTO comments (post_id, user_id, body, created_at) VALUES ($post, $user, $body, $at)");
 
-const times = Array.from({ length: 64 }, () => now - Math.floor(Math.pow(rand(), 1.6) * 75 * 86400_000) - 60_000).sort((a, b) => a - b);
+const times = Array.from({ length: 64 }, () => now - Math.floor(rand() ** 1.6 * 75 * 86400_000) - 60_000).sort((a, b) => a - b);
 for (const at of times) {
   const sender = pick(ids);
   const count = rand() < 0.2 ? 2 + Math.floor(rand() * 2) : 1;
@@ -148,10 +157,14 @@ writeFileSync(file, sql);
 db.close();
 // A separate state directory lets CI validate seeding without replacing a developer's data.
 const persistTo = process.argv.find((arg) => arg.startsWith("--persist-to="))?.slice("--persist-to=".length);
-const load = spawnSync("pnpm", ["exec", "wrangler", "d1", "execute", "kuakua", "--local", "--file", file, "--yes", ...(persistTo ? ["--persist-to", persistTo] : [])], {
-  cwd: ROOT,
-  stdio: ["ignore", "ignore", "inherit"],
-});
+const load = spawnSync(
+  "pnpm",
+  ["exec", "wrangler", "d1", "execute", "kuakua", "--local", "--file", file, "--yes", ...(persistTo ? ["--persist-to", persistTo] : [])],
+  {
+    cwd: ROOT,
+    stdio: ["ignore", "ignore", "inherit"],
+  },
+);
 rmSync(scratch, { recursive: true, force: true });
 if (load.status !== 0) process.exit(1);
 console.log(`seeded ${ids.length} people and 64 posts into the local dev database`);

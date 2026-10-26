@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { values } from "../../shared/values";
 import { api, type Feed as FeedData, type Post } from "../api";
 import { errorText } from "../i18n";
 import { useApp } from "../state";
-import { values } from "../../shared/values";
 import { PostCard } from "./PostCard";
 import { Empty, Segmented, Spinner, ValueChip } from "./ui";
 
@@ -67,15 +67,17 @@ export function Feed({
     [qs, cursor, mergeUsers, t],
   );
 
+  const resetFeed = useEffectEvent((fresh = false) => load(true, fresh));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a changed query resets pagination; cursor changes must not restart the feed.
   useEffect(() => {
     setPosts(null);
-    load(true);
+    resetFeed();
   }, [qs]);
 
   useEffect(() => {
     if (feedVersion === seenVersion.current) return;
     seenVersion.current = feedVersion;
-    load(true, true);
+    resetFeed(true);
   }, [feedVersion]);
 
   useEffect(() => {
@@ -141,12 +143,12 @@ export function Feed({
       )}
       {posts?.length === 0 && <Empty title={t("feed.empty")} sub={t("feed.emptySub")} action={emptyAction} />}
       <div className="post-list">
-        {posts?.map((p) => <PostCard key={p.id} post={p} onChange={update} onDeleted={remove} fresh={fresh.has(p.id)} linked />)}
+        {posts?.map((p) => (
+          <PostCard key={p.id} post={p} onChange={update} onDeleted={remove} fresh={fresh.has(p.id)} linked />
+        ))}
       </div>
       <div ref={sentinel} />
-      {posts && posts.length > 0 && (
-        <div className="feed-end">{cursor ? loading ? <Spinner /> : null : <span>{t("feed.end")}</span>}</div>
-      )}
+      {posts && posts.length > 0 && <div className="feed-end">{cursor ? loading ? <Spinner /> : null : <span>{t("feed.end")}</span>}</div>}
     </div>
   );
 }

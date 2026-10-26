@@ -2,6 +2,7 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { settingByKey } from "../../src/server/settings.ts";
+import { required } from "../../src/shared/required.ts";
 
 export const ROOT = resolve(import.meta.dirname, "../..");
 export const ENV_FILE = resolve(ROOT, process.env.ENV_FILE ?? ".env.production");
@@ -22,7 +23,7 @@ export function readEnvFile(file = ENV_FILE): Line[] {
     .split("\n")
     .map((raw) => {
       const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/.exec(raw);
-      return m ? { key: m[1]!, value: parseValue(m[2]!) } : { raw };
+      return m ? { key: required(m[1]), value: parseValue(required(m[2])) } : { raw };
     });
 }
 

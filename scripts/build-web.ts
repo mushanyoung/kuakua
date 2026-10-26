@@ -2,11 +2,11 @@
 // self-hosted fonts (/fonts/*; Google Fonts isn't reliably reachable from mainland China).
 //   node scripts/build-web.ts            one build
 //   node scripts/build-web.ts --watch    rebuild on changes (pnpm run dev)
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync, watch } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import tailwindcss from "@tailwindcss/postcss";
 import { build as bundle } from "esbuild";
 import postcss from "postcss";
-import tailwindcss from "@tailwindcss/postcss";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const OUT = join(ROOT, "dist");
@@ -40,13 +40,16 @@ async function build() {
   const entry = Object.keys(result.metafile.outputs).find((path) => path.endsWith(".js"));
   if (!entry) throw new Error("Missing browser entry bundle");
   const cssFile = join(ROOT, "src/web/styles.css");
-  const css = await postcss([tailwindcss({ optimize: true })]).process(readFileSync(cssFile, "utf8"), { from: cssFile, to: join(OUT, "styles.css") });
+  const css = await postcss([tailwindcss({ optimize: true })]).process(readFileSync(cssFile, "utf8"), {
+    from: cssFile,
+    to: join(OUT, "styles.css"),
+  });
   writeFileSync(join(OUT, "styles.css"), css.css);
   copyFileSync(join(ROOT, "src/web/favicon.svg"), join(OUT, "favicon.svg"));
   const html = readFileSync(join(ROOT, "src/web/index.html"), "utf8")
-    .replace('./main.tsx', `/${entry.split("/").pop()}`)
-    .replace('./styles.css', '/styles.css')
-    .replace('./favicon.svg', '/favicon.svg');
+    .replace("./main.tsx", `/${entry.split("/").pop()}`)
+    .replace("./styles.css", "/styles.css")
+    .replace("./favicon.svg", "/favicon.svg");
   if (/(?:src|href)="\.\//.test(html)) {
     console.error("[web] index.html links assets relatively; deep links like /kua/x would load a blank page");
     return false;
@@ -67,7 +70,10 @@ if (process.argv.includes("--watch")) {
     watch(join(ROOT, dir), { recursive: true }, () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        pending = pending.then(() => build()).then(() => undefined).catch(console.error);
+        pending = pending
+          .then(() => build())
+          .then(() => undefined)
+          .catch(console.error);
       }, 150);
     });
   }

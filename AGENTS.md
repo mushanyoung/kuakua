@@ -28,6 +28,8 @@
 pnpm install --frozen-lockfile
 pnpm run dev                 # 本地网页与 Worker，127.0.0.1:4381
 pnpm run demo:seed           # 替换本地 D1 为演示数据
+pnpm run format:check        # Biome 格式检查
+pnpm run lint                # recommended，警告也失败
 pnpm run typecheck           # 独立 strict 类型检查
 pnpm run test:integration    # 本地 Workers / D1 / R2 回归
 pnpm run build              # 网页生产构建 + Worker dry-run 打包
@@ -36,11 +38,11 @@ pnpm run doctor             # 只读部署配置体检
 
 ## 按任务读取
 
-| 任务 | 必要资料 |
-| --- | --- |
-| 开发、依赖、提交 | [开发流程](docs/development.md) |
-| 模块边界、运行环境、数据流 | [架构](docs/architecture.md)、[现行决策](docs/decisions.md) |
-| 测试或质量检查 | [测试策略](docs/testing.md) |
+| 任务                       | 必要资料                                                     |
+| -------------------------- | ------------------------------------------------------------ |
+| 开发、依赖、提交           | [开发流程](docs/development.md)                              |
+| 模块边界、运行环境、数据流 | [架构](docs/architecture.md)、[现行决策](docs/decisions.md)  |
+| 测试或质量检查             | [测试策略](docs/testing.md)                                  |
 | 首次部署、升级、配置、回滚 | [部署指南](docs/deployment.md)；不要为了开发任务读取部署密钥 |
-| 用户功能或产品规则 | [README](README.md) |
-| 追溯已废弃方案 | 仅按需读 `docs/archive/`；历史内容不作为现行规范 |
+| 用户功能或产品规则         | [README](README.md)                                          |
+| 追溯已废弃方案             | 仅按需读 `docs/archive/`；历史内容不作为现行规范             |

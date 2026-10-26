@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
 import { ArrowDownTrayIcon, ArrowPathIcon, ChevronRightIcon, EnvelopeIcon, TrophyIcon, UserGroupIcon } from "@heroicons/react/24/outline";
+import { useEffect, useRef, useState } from "react";
 import { api, type Users } from "../api";
 import { Avatar, Empty, Spinner, UserName } from "../components/ui";
 import { errorText, relativeTime } from "../i18n";
 import { Link } from "../router";
-import { useApp, useApi } from "../state";
+import { useApi, useApp } from "../state";
 
 type Run = {
   id: number;
@@ -52,7 +52,7 @@ export function Admin() {
     if (!running) return;
     const id = setTimeout(status.reload, 2000);
     return () => clearTimeout(id);
-  }, [status.data]);
+  }, [status.data, status.reload, bumpFeed]);
 
   if (!me.isAdmin) return <Empty title={errorText(t, "forbidden")} />;
   const s = status.data;
@@ -74,7 +74,9 @@ export function Admin() {
   const busy = syncing || Boolean(s?.running);
 
   const runLine = (r: Run | null) =>
-    !r ? t("admin.never") : `${relativeTime(r.started_at, lang, t)} · ${r.trigger} · ${r.ok ? t("admin.ok") : r.ok === 0 ? t("admin.failed") : "…"}`;
+    !r
+      ? t("admin.never")
+      : `${relativeTime(r.started_at, lang, t)} · ${r.trigger} · ${r.ok ? t("admin.ok") : r.ok === 0 ? t("admin.failed") : "…"}`;
 
   return (
     <div className="page">
@@ -112,7 +114,11 @@ export function Admin() {
           {s && (
             <dl className="kv">
               <dt>{t("admin.lastSync")}</dt>
-              <dd>{s.lastOk ? `${relativeTime(s.lastOk.finished_at ?? s.lastOk.started_at, lang, t)} · ${t("admin.syncResult", { users: s.lastOk.users_seen ?? 0, avatars: s.lastOk.avatars_updated ?? 0 })}` : t("admin.never")}</dd>
+              <dd>
+                {s.lastOk
+                  ? `${relativeTime(s.lastOk.finished_at ?? s.lastOk.started_at, lang, t)} · ${t("admin.syncResult", { users: s.lastOk.users_seen ?? 0, avatars: s.lastOk.avatars_updated ?? 0 })}`
+                  : t("admin.never")}
+              </dd>
               <dt>{t("admin.lastRun")}</dt>
               <dd>{runLine(s.last)}</dd>
               {s.last?.error && (

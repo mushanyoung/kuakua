@@ -1,3 +1,5 @@
+import { required } from "../shared/required.ts";
+import { values } from "../shared/values";
 import { authenticate } from "./auth";
 import { removeAvatar, serveAvatar, uploadAvatar } from "./avatars";
 import { config, emailNotifyEnabled, larkChatsEnabled, larkNotifyEnabled, notifyChannels } from "./config";
@@ -8,7 +10,6 @@ import { langOf, notifyPost } from "./notify";
 import * as store from "./store";
 import { HttpError, type Viewer } from "./store";
 import { isPeriod, periodOf, type Range } from "./time";
-import { values } from "../shared/values";
 
 // Cloudflare Worker entry. Static files (the web app, fonts) are served from ./dist by
 // Workers Static Assets; only /api/* and /avatars/* reach this code
@@ -21,7 +22,12 @@ type Route = { method: string; pattern: RegExp; keys: string[]; handler: Handler
 const routes: Route[] = [];
 function route(method: string, path: string, handler: Handler, opts: { admin?: boolean } = {}) {
   const keys: string[] = [];
-  const pattern = new RegExp(`^${path.replace(/:(\w+)/g, (_, k: string) => (keys.push(k), "([^/]+)"))}$`);
+  const pattern = new RegExp(
+    `^${path.replace(/:(\w+)/g, (_, k: string) => {
+      keys.push(k);
+      return "([^/]+)";
+    })}$`,
+  );
   routes.push({ method, pattern, keys, handler, ...opts });
 }
 
@@ -79,7 +85,7 @@ route("PUT", "/api/me/prefs", async ({ req, viewer }) => store.setPrefs(viewer.i
 route("GET", "/api/users", ({ viewer }) => store.listUsers(viewer));
 route("GET", "/api/lark/chats", ({ url }) => listLarkChats(url.searchParams.get("cursor") || undefined));
 route("GET", "/api/lark/chats/:id/members", ({ params, url }) =>
-  larkChatMembers(params.id!, url.searchParams.get("cursor") || undefined),
+  larkChatMembers(required(params.id), url.searchParams.get("cursor") || undefined),
 );
 route("GET", "/api/users/:id", ({ params, viewer }) => store.profile(params.id === "me" ? viewer.id : (intParam(params.id) ?? 0), viewer));
 route("PUT", "/api/users/:id/avatar", ({ req, params, viewer }) =>
@@ -197,7 +203,7 @@ route(
       const u = report.users[r.userId];
       lines.push([r.email, u?.name, u?.enName, u?.dept, r.count, r.points].map(csvCell).join(","));
     }
-    return new Response("﻿" + lines.join("\n") + "\n", {
+    return new Response(`﻿${lines.join("\n")}\n`, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="peer-bonus-${period}.csv"`,
@@ -222,8 +228,8 @@ async function handleApi(req: Request, url: URL, ctx: ExecutionContext) {
     if (req.method !== "GET" && !sameOrigin(req)) throw new HttpError(403, "bad_origin");
     const viewer = await store.resolveViewer(await authenticate(req));
     if (found.admin && !viewer.isAdmin) throw new HttpError(403, "admin_only");
-    const m = found.pattern.exec(url.pathname)!;
-    const params = Object.fromEntries(found.keys.map((k, i) => [k, decodeURIComponent(m[i + 1]!)]));
+    const m = required(found.pattern.exec(url.pathname));
+    const params = Object.fromEntries(found.keys.map((k, i) => [k, decodeURIComponent(required(m[i + 1]))]));
     if (config.directory.source === "roster" && Date.now() - rosterCheckedAt > 60_000) {
       rosterCheckedAt = Date.now();
       ctx.waitUntil(maybeSync("request").catch(() => {}));

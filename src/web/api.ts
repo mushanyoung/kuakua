@@ -95,8 +95,7 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
 }
 
 // English name only when it adds something (many colleagues' name is already English).
-export const altName = (u: User) =>
-  u.enName && u.enName.trim().toLowerCase() !== u.name.trim().toLowerCase() ? u.enName : null;
+export const altName = (u: User) => (u.enName && u.enName.trim().toLowerCase() !== u.name.trim().toLowerCase() ? u.enName : null);
 
 export const avatarSrc = (u: Pick<User, "avatar"> | undefined, size: 240 | 640 = 240) =>
   !u ? "" : size === 640 ? `${u.avatar}${u.avatar.includes("?") ? "&" : "?"}s=640` : u.avatar;

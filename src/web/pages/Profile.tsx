@@ -1,13 +1,13 @@
-import { useState } from "react";
 import { EnvelopeIcon } from "@heroicons/react/20/solid";
+import { useState } from "react";
 import { altName, api, type User, type Users } from "../api";
-import { Feed } from "../components/Feed";
 import { AvatarEditor } from "../components/AvatarEditor";
+import { Feed } from "../components/Feed";
 import { KuaLinkButton } from "../components/KuaLink";
 import { Avatar, CountUp, Empty, Segmented, Spinner, ValueChip } from "../components/ui";
 import { errorText } from "../i18n";
 import { Link } from "../router";
-import { useApp, useApi } from "../state";
+import { useApi, useApp } from "../state";
 import { AllowanceRing } from "./Wall";
 
 type Profile = {
@@ -40,9 +40,7 @@ export function ProfilePage({ id }: { id: string }) {
               {name(u)}
               {lang === "zh" && altName(u) && <span className="en">{altName(u)}</span>}
             </h1>
-            <p className="muted">
-              {[(lang === "en" && u.deptEn) || u.dept, u.title].filter(Boolean).join(" · ") || u.handle}
-            </p>
+            <p className="muted">{[(lang === "en" && u.deptEn) || u.dept, u.title].filter(Boolean).join(" · ") || u.handle}</p>
             {(isMe || me.isAdmin) && (
               <AvatarEditor key={u.id} user={u} onChange={(user) => res.setData({ ...p, user, users: { ...p.users, [user.id]: user } })} />
             )}

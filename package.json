@@ -15,7 +15,11 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/server",
     "test:integration": "node --test tests/*.test.ts",
     "test:avatars": "node --test tests/avatars.test.ts",
-    "test:lark-chats": "node --test tests/lark-chats.test.ts"
+    "test:lark-chats": "node --test tests/lark-chats.test.ts",
+    "format": "biome format --write .",
+    "format:check": "biome format . --error-on-warnings",
+    "lint": "biome lint . --error-on-warnings",
+    "lint:fix": "biome check --write . --error-on-warnings"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "5.3.0",
@@ -29,6 +33,7 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.3",
     "@tailwindcss/postcss": "4.3.3",
     "@types/canvas-confetti": "1.9.0",
     "@types/node": "26.6.5",

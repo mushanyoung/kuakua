@@ -1,0 +1,60 @@
+/* ------------------------------------------------------------ toasts & fatal */
+
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  background: rgba(32, 25, 44, 0.96);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow);
+  animation: toast 3.2s var(--ease-out) forwards;
+}
+.toast .ic {
+  width: 18px;
+  height: 18px;
+}
+.toast.error {
+  color: #ffb4bf;
+  border-color: rgba(255, 90, 110, 0.4);
+}
+@keyframes toast {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+  8%,
+  88% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.fatal {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+  padding: 24px;
+}

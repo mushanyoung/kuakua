@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { required } from "../../shared/required.ts";
 import { avatarSrc, type Users } from "../api";
 
 export type GraphEdge = { id: number; source: number; target: number; kind: string; at: number };
@@ -20,7 +21,7 @@ const WARM = ["#FF6B8B", "#FF9F6B", "#FFD27A"];
 function glowSprite(color: string) {
   const c = document.createElement("canvas");
   c.width = c.height = 48;
-  const g = c.getContext("2d")!;
+  const g = required(c.getContext("2d"));
   const grad = g.createRadialGradient(24, 24, 0, 24, 24, 24);
   grad.addColorStop(0, "rgba(255,255,255,1)");
   grad.addColorStop(0.18, color);
@@ -56,7 +57,7 @@ export function Constellation({
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas || nodeIds.length === 0) return;
-    const ctx = canvas.getContext("2d")!;
+    const ctx = required(canvas.getContext("2d"));
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     let W = 0;
     let H = 0;
@@ -118,8 +119,8 @@ export function Constellation({
     const particles: Particle[] = edges
       .slice(0, 48)
       .map((e) => ({
-        s: index.get(e.source)!,
-        t: index.get(e.target)!,
+        s: required(index.get(e.source)),
+        t: required(index.get(e.target)),
         p: Math.random(),
         speed: 0.0022 + Math.random() * 0.0028,
         bonus: e.kind === "bonus",
@@ -127,7 +128,7 @@ export function Constellation({
       .filter((p) => p.s !== undefined && p.t !== undefined && p.s !== p.t);
     const nearest = (i: number, k: number) =>
       nodes
-        .map((n, j) => [j, (n.x - nodes[i]!.x) ** 2 + (n.y - nodes[i]!.y) ** 2] as const)
+        .map((n, j) => [j, (n.x - required(nodes[i]).x) ** 2 + (n.y - required(nodes[i]).y) ** 2] as const)
         .filter(([j]) => j !== i)
         .sort((a, b) => a[1] - b[1])
         .slice(0, k)
@@ -135,7 +136,14 @@ export function Constellation({
     const ambient = (): Particle => {
       const s = Math.floor(Math.random() * nodes.length);
       const near = nearest(s, 3);
-      return { s, t: near[Math.floor(Math.random() * near.length)] ?? s, p: 0, speed: 0.004 + Math.random() * 0.004, bonus: Math.random() < 0.25, ambient: true };
+      return {
+        s,
+        t: near[Math.floor(Math.random() * near.length)] ?? s,
+        p: 0,
+        speed: 0.004 + Math.random() * 0.004,
+        bonus: Math.random() < 0.25,
+        ambient: true,
+      };
     };
     const ripples: { n: number; t: number; bonus: boolean }[] = [];
     const pink = glowSprite("rgba(255,120,150,0.9)");
@@ -154,9 +162,9 @@ export function Constellation({
     const step = () => {
       const n = nodes.length;
       for (let i = 0; i < n; i++) {
-        const a = nodes[i]!;
+        const a = required(nodes[i]);
         for (let j = i + 1; j < n; j++) {
-          const b = nodes[j]!;
+          const b = required(nodes[j]);
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const d2 = dx * dx + dy * dy + 0.01;
@@ -174,8 +182,8 @@ export function Constellation({
         }
       }
       for (const p of pairs) {
-        const a = nodes[p.a]!;
-        const b = nodes[p.b]!;
+        const a = required(nodes[p.a]);
+        const b = required(nodes[p.b]);
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const d = Math.sqrt(dx * dx + dy * dy) + 0.01;
@@ -213,7 +221,7 @@ export function Constellation({
             const key = i < j ? `${i}-${j}` : `${j}-${i}`;
             if (seen.has(key)) continue;
             seen.add(key);
-            const b = nodes[j]!;
+            const b = required(nodes[j]);
             const lit = hovered === i || hovered === j;
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
@@ -225,8 +233,8 @@ export function Constellation({
       }
 
       for (const p of pairs) {
-        const a = nodes[p.a]!;
-        const b = nodes[p.b]!;
+        const a = required(nodes[p.a]);
+        const b = required(nodes[p.b]);
         const c = control(a, b, p.a, p.b);
         const lit = hovered === p.a || hovered === p.b;
         ctx.beginPath();
@@ -240,8 +248,8 @@ export function Constellation({
 
       ctx.globalCompositeOperation = "lighter";
       for (const pt of particles) {
-        const a = nodes[pt.s]!;
-        const b = nodes[pt.t]!;
+        const a = required(nodes[pt.s]);
+        const b = required(nodes[pt.t]);
         const c = pt.ambient ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : control(a, b, pt.s, pt.t);
         for (const [offset, size] of [
           [0, 18],
@@ -259,13 +267,13 @@ export function Constellation({
       ctx.globalCompositeOperation = "source-over";
 
       for (let i = ripples.length - 1; i >= 0; i--) {
-        const rp = ripples[i]!;
+        const rp = required(ripples[i]);
         const age = (time - rp.t) / 900;
         if (age >= 1) {
           ripples.splice(i, 1);
           continue;
         }
-        const nd = nodes[rp.n]!;
+        const nd = required(nodes[rp.n]);
         ctx.beginPath();
         ctx.arc(nd.x, nd.y, nd.r + 2 + age * 18, 0, Math.PI * 2);
         ctx.strokeStyle = rp.bonus ? `rgba(255,210,122,${0.6 * (1 - age)})` : `rgba(255,120,150,${0.6 * (1 - age)})`;
@@ -277,7 +285,9 @@ export function Constellation({
         const r = nd.r * (hovered === i ? 1.18 : 1);
         if (nd.recv > 0 || nd.id === meId) {
           const ring = ctx.createLinearGradient(nd.x - r, nd.y - r, nd.x + r, nd.y + r);
-          WARM.forEach((c, k) => ring.addColorStop(k / (WARM.length - 1), c));
+          WARM.forEach((c, k) => {
+            ring.addColorStop(k / (WARM.length - 1), c);
+          });
           ctx.beginPath();
           ctx.arc(nd.x, nd.y, r + 2.5, 0, Math.PI * 2);
           ctx.strokeStyle = nd.id === meId ? "#FFF1E6" : ring;
@@ -304,7 +314,7 @@ export function Constellation({
       });
 
       if (hovered !== -1) {
-        const nd = nodes[hovered]!;
+        const nd = required(nodes[hovered]);
         const text = labelRef.current(nd.id);
         ctx.font = "600 12px 'Figtree Variable', 'PingFang SC', 'Noto Sans SC', sans-serif";
         const w = ctx.measureText(text).width + 18;
@@ -353,7 +363,9 @@ export function Constellation({
       raf = requestAnimationFrame(loop);
     }
     const redrawStatic = () => reduced && draw();
-    nodes.forEach((n) => (n.img.onload = redrawStatic));
+    nodes.forEach((n) => {
+      n.img.onload = redrawStatic;
+    });
 
     const io = new IntersectionObserver(([entry]) => {
       visible = Boolean(entry?.isIntersecting) && !document.hidden;
@@ -377,7 +389,10 @@ export function Constellation({
       let bestD = Infinity;
       nodes.forEach((n, i) => {
         const d = Math.hypot(n.x - x, n.y - y);
-        if (d < n.r + 6 && d < bestD) (best = i), (bestD = d);
+        if (d < n.r + 6 && d < bestD) {
+          best = i;
+          bestD = d;
+        }
       });
       return best;
     };
@@ -395,7 +410,7 @@ export function Constellation({
     };
     const onClick = (e: PointerEvent) => {
       const h = hit(e);
-      if (h !== -1) pickRef.current(nodes[h]!.id);
+      if (h !== -1) pickRef.current(required(nodes[h]).id);
     };
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerleave", onLeave);
@@ -410,7 +425,7 @@ export function Constellation({
       canvas.removeEventListener("pointerleave", onLeave);
       canvas.removeEventListener("click", onClick as EventListener);
     };
-  }, [nodeIds.join(","), edges.map((e) => e.id).join(",")]);
+  }, [nodeIds, edges, users, meId]);
 
-  return <canvas ref={ref} className="constellation" aria-hidden="true" />;
+  return <canvas ref={ref} className="constellation" role="img" aria-label="Colleague appreciation connections" />;
 }

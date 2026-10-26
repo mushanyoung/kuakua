@@ -1,7 +1,11 @@
-import { useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from "react";
+import { type AnchorHTMLAttributes, type MouseEvent, useSyncExternalStore } from "react";
+import { required } from "../shared/required.ts";
 
 const listeners = new Set<() => void>();
-const emit = () => listeners.forEach((l) => l());
+const emit = () =>
+  listeners.forEach((l) => {
+    l();
+  });
 window.addEventListener("popstate", emit);
 
 export function navigate(to: string, { replace = false, keepScroll = false } = {}) {
@@ -13,7 +17,12 @@ export function navigate(to: string, { replace = false, keepScroll = false } = {
 
 export function useLocation() {
   const href = useSyncExternalStore(
-    (cb) => (listeners.add(cb), () => listeners.delete(cb)),
+    (cb) => {
+      listeners.add(cb);
+      return () => {
+        listeners.delete(cb);
+      };
+    },
     () => location.pathname + location.search,
   );
   const url = new URL(href, location.origin);
@@ -26,7 +35,7 @@ export function match(pattern: string, path: string): Record<string, string> | n
   if (a.length !== b.length) return null;
   const params: Record<string, string> = {};
   for (let i = 0; i < a.length; i++) {
-    if (a[i]!.startsWith(":")) params[a[i]!.slice(1)] = decodeURIComponent(b[i]!);
+    if (required(a[i]).startsWith(":")) params[required(a[i]).slice(1)] = decodeURIComponent(required(b[i]));
     else if (a[i] !== b[i]) return null;
   }
   return params;

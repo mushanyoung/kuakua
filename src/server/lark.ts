@@ -1,8 +1,9 @@
+import { required } from "../shared/required.ts";
 import { putAvatar, shortHash } from "./avatars";
 import { config, isAllowedEmail } from "./config";
 import { db, q } from "./db";
 import type { SyncResult } from "./directory";
-import { copy, site, type Notice } from "./notify";
+import { copy, type Notice, site } from "./notify";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -13,7 +14,10 @@ const log = (...args: unknown[]) => console.log("[lark]", ...args);
 type LarkBody<T> = { code: number; msg: string; data?: T; tenant_access_token?: string; expire?: number };
 
 export class LarkApiError extends Error {
-  constructor(public code: number, message: string) {
+  constructor(
+    public code: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -178,7 +182,7 @@ async function fetchDirectory() {
 }
 
 function pickEmail(u: LarkUser) {
-  const candidates = [u.enterprise_email, u.email].filter(Boolean).map((e) => e!.trim().toLowerCase());
+  const candidates = [u.enterprise_email, u.email].filter(Boolean).map((e) => required(e).trim().toLowerCase());
   return candidates.find(isAllowedEmail) ?? candidates[0] ?? null;
 }
 
@@ -217,15 +221,18 @@ export async function syncLark(): Promise<SyncResult> {
   // Match each Lark user to an existing row by open_id, else adopt a row that signed in
   // by email before the sync knew them. An email already taken by another row is skipped.
   const existing = await db.all<Existing>("SELECT id, open_id, email, avatar_src, avatar_ver FROM users");
-  const byOpenId = new Map(existing.filter((r) => r.open_id).map((r) => [r.open_id!, r]));
-  const adoptable = new Map(existing.filter((r) => r.email && !r.open_id).map((r) => [r.email!, r]));
-  const emailOwner = new Map(existing.filter((r) => r.email).map((r) => [r.email!, r.id]));
+  const byOpenId = new Map(existing.filter((r) => r.open_id).map((r) => [required(r.open_id), r]));
+  const adoptable = new Map(existing.filter((r) => r.email && !r.open_id).map((r) => [required(r.email), r]));
+  const emailOwner = new Map(existing.filter((r) => r.email).map((r) => [required(r.email), r.id]));
   const updates: Record<string, unknown>[] = [];
   const inserts: Record<string, unknown>[] = [];
   for (const u of list) {
     const email = pickEmail(u);
     let row = byOpenId.get(u.open_id);
-    if (!row && email && adoptable.has(email)) (row = adoptable.get(email)), adoptable.delete(email);
+    if (!row && email && adoptable.has(email)) {
+      row = adoptable.get(email);
+      adoptable.delete(email);
+    }
     const owner = email ? emailOwner.get(email) : undefined;
     const safeEmail = email && (owner === undefined || owner === row?.id) ? email : (row?.email ?? null);
     if (safeEmail) emailOwner.set(safeEmail, row?.id ?? -1);
@@ -286,9 +293,9 @@ export async function syncLark(): Promise<SyncResult> {
   const jobs: { id: number; user: LarkUser; src: string }[] = [];
   const cleared: number[] = [];
   for (const row of rows) {
-    const src = users.get(row.open_id!)?.avatar?.avatar_240;
+    const src = users.get(required(row.open_id))?.avatar?.avatar_240;
     if (!src) row.avatar_ver && cleared.push(row.id);
-    else if (src !== row.avatar_src || !row.avatar_ver) jobs.push({ id: row.id, user: users.get(row.open_id!)!, src });
+    else if (src !== row.avatar_src || !row.avatar_ver) jobs.push({ id: row.id, user: required(users.get(required(row.open_id))), src });
   }
   const done: { id: number; src: string; ver: string; key: string }[] = [];
   const queue = [...jobs];
@@ -343,11 +350,16 @@ function card(n: Notice) {
 }
 
 async function send(receiveIdType: "open_id" | "chat_id", receiveId: string, content: unknown) {
-  await lark("POST", "/open-apis/im/v1/messages", { receive_id_type: receiveIdType }, {
-    receive_id: receiveId,
-    msg_type: "interactive",
-    content: JSON.stringify(content),
-  });
+  await lark(
+    "POST",
+    "/open-apis/im/v1/messages",
+    { receive_id_type: receiveIdType },
+    {
+      receive_id: receiveId,
+      msg_type: "interactive",
+      content: JSON.stringify(content),
+    },
+  );
 }
 
 // One card per notice: DMs by open_id, the broadcast to LARK_BROADCAST_CHAT_ID if set.

@@ -1,0 +1,62 @@
+/* ------------------------------------------------------------ avatars */
+
+.avatar {
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  position: relative;
+  display: inline-block;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: linear-gradient(135deg, #2a2338, #1c1728);
+  vertical-align: middle;
+}
+.avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.avatar.ring {
+  padding: 2px;
+  background: var(--grad-warm);
+}
+.avatar.ring img {
+  border: 2px solid var(--bg);
+}
+.avatar.more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  background: #2a2338;
+}
+.avatar-link {
+  display: inline-flex;
+  border-radius: 50%;
+  transition: transform 0.2s var(--ease);
+}
+.avatar-link:hover {
+  transform: translateY(-1px) scale(1.04);
+}
+.avatar-stack {
+  display: inline-flex;
+  align-items: center;
+}
+.avatar-stack > * + * {
+  margin-left: calc(var(--s) * -0.32);
+}
+.avatar-stack .avatar {
+  box-shadow: 0 0 0 2px var(--card);
+}
+.user-name {
+  font-weight: 650;
+  color: var(--text);
+  transition: color 0.15s;
+}
+.user-name:hover {
+  color: #ffc2cf;
+}

@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from "react";
-import confetti from "canvas-confetti";
-import { ChatBubbleLeftRightIcon, GiftIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { BellAlertIcon, LockClosedIcon } from "@heroicons/react/20/solid";
-import { altName, api, type PostDetail, type Allowance, type User, type Users } from "../api";
-import { channelsText, errorText } from "../i18n";
-import { useApp, type ComposerPrefill } from "../state";
+import { ChatBubbleLeftRightIcon, GiftIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import confetti from "canvas-confetti";
+import { type FormEvent, type KeyboardEvent, type RefObject, useEffect, useRef, useState } from "react";
+import { required } from "../../shared/required.ts";
 import { LIMITS, values } from "../../shared/values";
-import { Avatar, ValueChip } from "./ui";
+import { type Allowance, altName, api, type PostDetail, type User, type Users } from "../api";
+import { channelsText, errorText } from "../i18n";
+import { type ComposerPrefill, useApp } from "../state";
 import { LarkChatPicker } from "./LarkChatPicker";
+import { Avatar, ValueChip } from "./ui";
 
 const HEART = confetti.shapeFromPath({
   path: "M167 72c19-38 37-56 75-56 42 0 76 33 76 75 0 76-76 151-151 227-76-76-151-151-151-227 0-42 33-75 75-75 38 0 57 18 76 56z",
@@ -47,16 +48,20 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   const ccRef = useRef<HTMLInputElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
+  const initialMessageFocus = useRef(recipientIds.length > 0);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     loadDirectory().catch(() => {});
+    dialogRef.current?.showModal();
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    (recipientIds.length ? messageRef : searchRef).current?.focus();
+    (initialMessageFocus.current ? messageRef : searchRef).current?.focus();
     return () => {
       document.body.style.overflow = prev;
+      dialogRef.current?.close();
     };
-  }, []);
+  }, [loadDirectory]);
 
   const suggestTo = (pool: User[]) => {
     pool = pool.filter((u) => u.id !== me.user.id);
@@ -85,7 +90,8 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   const tooShort = kind === "bonus" && message.trim().length < LIMITS.messageMinBonus;
   const selfBonus = kind === "bonus" && recipientIds.includes(me.user.id);
   const tooManyRecipients = n > LIMITS.recipientsMax;
-  const canSend = n > 0 && message.trim().length > 0 && !tooExpensive && !tooShort && !selfBonus && !tooManyRecipients && !busy && !loadingChat;
+  const canSend =
+    n > 0 && message.trim().length > 0 && !tooExpensive && !tooShort && !selfBonus && !tooManyRecipients && !busy && !loadingChat;
 
   function addChatMembers(members: Users, skipped: number) {
     mergeUsers(members);
@@ -139,15 +145,21 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
   }
 
   return (
-    <div
+    <dialog
+      ref={dialogRef}
       className="modal-backdrop"
+      aria-labelledby="composer-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
       onPointerDown={(e) => e.target === e.currentTarget && onClose()}
       onKeyDown={(e) => {
         if (e.key === "Escape") onClose();
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
       }}
     >
-      <form className="modal composer" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="composer-title">
+      <form className="modal composer" onSubmit={submit}>
         <div className="modal-head">
           <h2 id="composer-title">{t("composer.title")}</h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label={t("close")}>
@@ -178,7 +190,12 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
         </div>
 
         <label className="field-label" htmlFor="composer-to">
-          {t("composer.to")} {n > 0 && <small>{n}/{LIMITS.recipientsMax}</small>}
+          {t("composer.to")}{" "}
+          {n > 0 && (
+            <small>
+              {n}/{LIMITS.recipientsMax}
+            </small>
+          )}
         </label>
         {me.config.larkChats && <LarkChatPicker onAdd={addChatMembers} onBusyChange={setLoadingChat} disabled={busy} />}
         <PeoplePicker
@@ -192,11 +209,16 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           inputRef={searchRef}
           suggest={suggestTo}
         />
-        {tooManyRecipients && <p className="form-error recipient-limit" role="alert">
-          {t("composer.recipientLimit", { n, max: LIMITS.recipientsMax })}
-        </p>}
+        {tooManyRecipients && (
+          <p className="form-error recipient-limit" role="alert">
+            {t("composer.recipientLimit", { n, max: LIMITS.recipientsMax })}
+          </p>
+        )}
         <label className="field-label" htmlFor="composer-cc">
-          {t("composer.cc")} <small>{me.config.notify.length ? t("composer.ccHintNotify", { channels: channelsText(t, me.config.notify) }) : t("composer.ccHint")}</small>
+          {t("composer.cc")}{" "}
+          <small>
+            {me.config.notify.length ? t("composer.ccHintNotify", { channels: channelsText(t, me.config.notify) }) : t("composer.ccHint")}
+          </small>
         </label>
         <PeoplePicker
           id="composer-cc"
@@ -281,7 +303,7 @@ export function Composer({ prefill, onClose }: { prefill?: ComposerPrefill; onCl
           </button>
         </div>
       </form>
-    </div>
+    </dialog>
   );
 }
 
@@ -329,15 +351,25 @@ function PeoplePicker({
   }
 
   function onKey(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "ArrowDown") (e.preventDefault(), setCursor((c) => Math.min(c + 1, candidates.length - 1)));
-    else if (e.key === "ArrowUp") (e.preventDefault(), setCursor((c) => Math.max(c - 1, 0)));
-    else if (e.key === "Enter" && candidates[cursor]) (e.preventDefault(), add(candidates[cursor]!.user));
-    else if (e.key === "Backspace" && !query && value.length) onChange(value.slice(0, -1));
-    else if (e.key === "Escape" && (query || focused)) (e.stopPropagation(), setQuery(""), inputRef.current?.blur());
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCursor((c) => Math.min(c + 1, candidates.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCursor((c) => Math.max(c - 1, 0));
+    } else if (e.key === "Enter" && candidates[cursor]) {
+      e.preventDefault();
+      add(required(candidates[cursor]).user);
+    } else if (e.key === "Backspace" && !query && value.length) onChange(value.slice(0, -1));
+    else if (e.key === "Escape" && (query || focused)) {
+      e.stopPropagation();
+      setQuery("");
+      inputRef.current?.blur();
+    }
   }
 
   return (
-    <div className={`picker ${focused ? "focus" : ""}`} onClick={() => inputRef.current?.focus()}>
+    <div className={`picker ${focused ? "focus" : ""}`}>
       {value.map((uid) => (
         <span key={uid} className="chip-person">
           <Avatar user={users[uid]} size={22} link={false} />
@@ -345,7 +377,10 @@ function PeoplePicker({
           <button
             type="button"
             aria-label={t("composer.removePerson", { name: name(users[uid]) })}
-            onClick={(e) => (e.stopPropagation(), onChange(value.filter((x) => x !== uid)))}
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange(value.filter((x) => x !== uid));
+            }}
           >
             <XMarkIcon />
           </button>
@@ -353,25 +388,38 @@ function PeoplePicker({
       ))}
       <input
         id={id}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={focused}
+        aria-controls={`${id}-options`}
+        aria-activedescendant={focused && candidates[cursor] ? `${id}-option-${candidates[cursor]?.user.id}` : undefined}
         ref={inputRef}
         value={query}
         autoComplete="off"
-        onChange={(e) => (setQuery(e.target.value), setCursor(0))}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setCursor(0);
+        }}
         onKeyDown={onKey}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         placeholder={value.length ? "" : placeholder}
       />
       {focused && (
-        <ul className="picker-list" role="listbox">
-          {candidates.length === 0 && <li className="picker-empty">{directory ? t("composer.noMatch") : t("loading")}</li>}
+        <div className="picker-list" role="listbox" id={`${id}-options`} aria-label={placeholder}>
+          {candidates.length === 0 && <div className="picker-empty">{directory ? t("composer.noMatch") : t("loading")}</div>}
           {candidates.map(({ user: u, tag }, i) => (
-            <li
+            <div
               key={u.id}
+              id={`${id}-option-${u.id}`}
+              tabIndex={-1}
               role="option"
               aria-selected={i === cursor}
               className={i === cursor ? "on" : ""}
-              onPointerDown={(e) => (e.preventDefault(), add(u))}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                add(u);
+              }}
               onPointerEnter={() => setCursor(i)}
             >
               <Avatar user={u} size={32} link={false} />
@@ -381,9 +429,9 @@ function PeoplePicker({
               </span>
               {tag && <span className="pl-tag">{tag}</span>}
               <span className="pl-dept">{(lang === "en" && u.deptEn) || u.dept || u.handle}</span>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );

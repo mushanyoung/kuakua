@@ -14,9 +14,10 @@
 //   pnpm run config access-include     Cloudflare Access include rules (JSON)
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { directorySourceOf, isRequired, SETTINGS, settingByKey, type Setting } from "../src/server/settings.ts";
+import { directorySourceOf, isRequired, SETTINGS, type Setting, settingByKey } from "../src/server/settings.ts";
+import { required } from "../src/shared/required.ts";
 import { parseValues } from "../src/shared/values.ts";
-import { cloudflareEnv, effective, ENV_FILE, fileValues, readEnvFile, ROOT, setValue, splitList } from "./lib/env.ts";
+import { cloudflareEnv, ENV_FILE, effective, fileValues, ROOT, readEnvFile, setValue, splitList } from "./lib/env.ts";
 import { readRosterFile } from "./lib/roster.ts";
 
 const mask = (s: Setting, v: string) => (s.secret && v ? `(set, ${v.length} characters)` : v);
@@ -25,8 +26,10 @@ function wrap(text: string, width = 96, prefix = "# ") {
   const out: string[] = [];
   let line = "";
   for (const word of text.split(" ")) {
-    if (line && line.length + word.length + 1 > width) out.push(prefix + line), (line = word);
-    else line = line ? `${line} ${word}` : word;
+    if (line && line.length + word.length + 1 > width) {
+      out.push(prefix + line);
+      line = word;
+    } else line = line ? `${line} ${word}` : word;
   }
   if (line) out.push(prefix + line);
   return out.join("\n");
@@ -38,7 +41,10 @@ function doctor() {
   let failures = 0;
   const ok = (m: string) => console.log(`  ✓ ${m}`);
   const warn = (m: string) => console.log(`  ⚠ ${m}`);
-  const fail = (m: string) => (failures++, console.log(`  ✗ ${m}`));
+  const fail = (m: string) => {
+    failures++;
+    console.log(`  ✗ ${m}`);
+  };
   const section = (m: string) => console.log(`\n${m}`);
 
   section(`Config file ${ENV_FILE}`);
@@ -152,7 +158,7 @@ function doctor() {
 function compatibilityDate() {
   const m = /"compatibility_date"\s*:\s*"([^"]+)"/.exec(readFileSync(join(ROOT, "wrangler.jsonc"), "utf8"));
   if (!m) throw new Error("compatibility_date not found in wrangler.jsonc");
-  return m[1]!;
+  return required(m[1]);
 }
 
 // The deployment's Wrangler config: same shape as the dev wrangler.jsonc, plus the real
@@ -167,7 +173,7 @@ function wranglerConfig() {
     VALUES_JSON: valuesFile ? JSON.stringify(parseValues(JSON.parse(readFileSync(resolve(ROOT, valuesFile), "utf8")))) : "",
   };
   for (const s of SETTINGS) {
-    if (s.scope === "worker" && !s.secret && !s.devOnly && env[s.key] !== undefined) vars[s.key] = env[s.key]!;
+    if (s.scope === "worker" && !s.secret && !s.devOnly && env[s.key] !== undefined) vars[s.key] = required(env[s.key]);
   }
   const config = {
     $schema: "../node_modules/wrangler/config-schema.json",
@@ -194,14 +200,14 @@ function wranglerConfig() {
   };
   mkdirSync(join(ROOT, "local"), { recursive: true });
   const file = join(ROOT, "local/wrangler.json");
-  writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+  writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
   console.log(file);
 }
 
 // Worker secrets for `wrangler deploy --secrets-file`; prints nothing when there are none.
 function secretsFile() {
   const env = fileValues();
-  const secrets = Object.fromEntries(SETTINGS.filter((s) => s.secret && env[s.key]).map((s) => [s.key, env[s.key]!]));
+  const secrets = Object.fromEntries(SETTINGS.filter((s) => s.secret && env[s.key]).map((s) => [s.key, required(env[s.key])]));
   if (!Object.keys(secrets).length) return;
   mkdirSync(join(ROOT, "local"), { recursive: true });
   const file = join(ROOT, "local/.secrets.json");
@@ -219,7 +225,7 @@ function accessInclude() {
     if (roster.errors.length) throw new Error(`roster: ${roster.errors.join("; ")}`);
     for (const e of roster.entries) emails.add(e.email);
   }
-  for (const email of emails) if (!domains.has(email.split("@")[1]!)) rules.push({ email: { email } });
+  for (const email of emails) if (!domains.has(required(email.split("@")[1]))) rules.push({ email: { email } });
   console.log(JSON.stringify(rules));
 }
 
@@ -262,7 +268,8 @@ function example() {
 const [cmd, ...args] = process.argv.slice(2);
 switch (cmd) {
   case "doctor":
-    process.exit(doctor());
+    process.exitCode = doctor();
+    break;
   case "list": {
     const env = fileValues();
     for (const s of SETTINGS.filter((x) => !x.devOnly)) {
@@ -313,6 +320,11 @@ switch (cmd) {
     accessInclude();
     break;
   default:
-    console.log(readFileSync(import.meta.filename, "utf8").split("\n").filter((l) => l.startsWith("//")).join("\n"));
+    console.log(
+      readFileSync(import.meta.filename, "utf8")
+        .split("\n")
+        .filter((l) => l.startsWith("//"))
+        .join("\n"),
+    );
     process.exit(cmd ? 1 : 0);
 }

@@ -5,7 +5,11 @@ import type { DatabaseSync } from "node:sqlite";
 const TABLES = ["departments", "users", "posts", "post_recipients", "post_cc", "reactions", "comments", "sync_runs"] as const;
 
 const literal = (v: unknown) =>
-  v === null || v === undefined ? "NULL" : typeof v === "number" || typeof v === "bigint" ? String(v) : `'${String(v).replace(/'/g, "''")}'`;
+  v === null || v === undefined
+    ? "NULL"
+    : typeof v === "number" || typeof v === "bigint"
+      ? String(v)
+      : `'${String(v).replace(/'/g, "''")}'`;
 
 export function exportRows(db: DatabaseSync) {
   const out: string[] = ["PRAGMA defer_foreign_keys = true;"];
@@ -17,5 +21,5 @@ export function exportRows(db: DatabaseSync) {
       out.push(`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map((c) => literal(row[c])).join(", ")});`);
     }
   }
-  return out.join("\n") + "\n";
+  return `${out.join("\n")}\n`;
 }

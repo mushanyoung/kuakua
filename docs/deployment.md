@@ -33,20 +33,20 @@ pnpm install --frozen-lockfile
 
 先跑 `pnpm run doctor`，它会列出每一项。下面这些需要问人，问清楚后用 `pnpm run config set KEY VALUE` 写进去：
 
-| 要问的 | 写到 | 说明 |
-|---|---|---|
-| 网站地址 | `PUBLIC_URL` | `https://<hostname>`；hostname 所在的域名必须在他们的 Cloudflare 账号里 |
-| 管理员邮箱 | `ADMIN_EMAILS` | 逗号分隔；管理员能同步名单、导出 Peer Bonus 报表、看光荣榜、删任何帖子 |
-| 人员名单来源 | `DIRECTORY_SOURCE` | `roster`（一份名单文件）或 `lark`（Lark/飞书通讯录每日同步，需要 `LARK_*`） |
-| 名单文件 | `ROSTER_FILE` | 默认 `./local/roster.csv`。格式见下文；向对方要名单和头像 |
-| 额外允许登录的邮箱域名 | `ALLOWED_EMAIL_DOMAINS` | 可空。空 = 只有名单里的人和管理员能登录 |
-| 时区 | `APP_TIMEZONE` | 每月 1 日零点重置 Peer Bonus 额度 |
-| 品质标签 | `VALUES_FILE` | 可空（用内置 8 个）；要自定义就照 `deploy/values.example.json` 写到 `local/values.json` |
-| Peer Bonus 额度 | `BONUS_MONTHLY_ALLOWANCE`、`BONUS_POINTS` | 每人每月可送出的积分、每份给每人的积分 |
-| 数据放在哪 | `DATA_LOCATION` | D1 和 R2 的区域；用户在亚洲就填 `apac`。只在第一次创建时生效 |
-| 同一账号多个部署？ | `WORKER_NAME` | 每个部署一个名字（D1、R2 跟着它命名） |
-| Lark 每日同步时间 | `SYNC_CRON` | UTC 的 cron，默认 `0 19 * * *`（北京时间凌晨 3 点） |
-| 邮件通知 | `EMAIL_NOTIFY`、`EMAIL_FROM`、`EMAIL_FROM_NAME` | 开了（`1`）就给被夸、被抄送的人发邮件，名单和 Lark 两种来源都能用；发件地址的域名要先开通发信，见下文"邮件通知" |
+| 要问的                 | 写到                                            | 说明                                                                                                            |
+| ---------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 网站地址               | `PUBLIC_URL`                                    | `https://<hostname>`；hostname 所在的域名必须在他们的 Cloudflare 账号里                                         |
+| 管理员邮箱             | `ADMIN_EMAILS`                                  | 逗号分隔；管理员能同步名单、导出 Peer Bonus 报表、看光荣榜、删任何帖子                                          |
+| 人员名单来源           | `DIRECTORY_SOURCE`                              | `roster`（一份名单文件）或 `lark`（Lark/飞书通讯录每日同步，需要 `LARK_*`）                                     |
+| 名单文件               | `ROSTER_FILE`                                   | 默认 `./local/roster.csv`。格式见下文；向对方要名单和头像                                                       |
+| 额外允许登录的邮箱域名 | `ALLOWED_EMAIL_DOMAINS`                         | 可空。空 = 只有名单里的人和管理员能登录                                                                         |
+| 时区                   | `APP_TIMEZONE`                                  | 每月 1 日零点重置 Peer Bonus 额度                                                                               |
+| 品质标签               | `VALUES_FILE`                                   | 可空（用内置 8 个）；要自定义就照 `deploy/values.example.json` 写到 `local/values.json`                         |
+| Peer Bonus 额度        | `BONUS_MONTHLY_ALLOWANCE`、`BONUS_POINTS`       | 每人每月可送出的积分、每份给每人的积分                                                                          |
+| 数据放在哪             | `DATA_LOCATION`                                 | D1 和 R2 的区域；用户在亚洲就填 `apac`。只在第一次创建时生效                                                    |
+| 同一账号多个部署？     | `WORKER_NAME`                                   | 每个部署一个名字（D1、R2 跟着它命名）                                                                           |
+| Lark 每日同步时间      | `SYNC_CRON`                                     | UTC 的 cron，默认 `0 19 * * *`（北京时间凌晨 3 点）                                                             |
+| 邮件通知               | `EMAIL_NOTIFY`、`EMAIL_FROM`、`EMAIL_FROM_NAME` | 开了（`1`）就给被夸、被抄送的人发邮件，名单和 Lark 两种来源都能用；发件地址的域名要先开通发信，见下文"邮件通知" |
 
 `doctor` 里 "Not in the config file yet" 下列出的项，即使用默认值也请 `config set` 一次写进文件——这样以后升级时，新增的配置项才会单独显眼地出现在这个列表里。
 
@@ -54,15 +54,15 @@ pnpm install --frozen-lockfile
 
 CSV，第一行是表头，列顺序随意，只有 `email`、`name` 必填。也可以用同样字段的 JSON 数组（文件名以 `.json` 结尾）。示例：`deploy/roster.example.csv`。
 
-| 列 | 说明 |
-|---|---|
-| `email` | 登录邮箱（Cloudflare Access 用它识别人），不区分大小写，不能重复 |
-| `name` | 显示名 |
-| `en_name` | 英文名（英文界面用） |
-| `department` / `department_en` | 部门及英文名 |
-| `title` | 职务 |
-| `manager` | 上级的邮箱（抄送时会推荐"TA 的上级"） |
-| `avatar` | 头像：名单文件所在文件夹里的相对路径（如 `avatars/alice.jpg`），或 https 链接。JPEG/PNG/WebP/GIF，建议 ≤ 640px 方图；没有就用渐变色首字头像 |
+| 列                             | 说明                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `email`                        | 登录邮箱（Cloudflare Access 用它识别人），不区分大小写，不能重复                                                                            |
+| `name`                         | 显示名                                                                                                                                      |
+| `en_name`                      | 英文名（英文界面用）                                                                                                                        |
+| `department` / `department_en` | 部门及英文名                                                                                                                                |
+| `title`                        | 职务                                                                                                                                        |
+| `manager`                      | 上级的邮箱（抄送时会推荐"TA 的上级"）                                                                                                       |
+| `avatar`                       | 头像：名单文件所在文件夹里的相对路径（如 `avatars/alice.jpg`），或 https 链接。JPEG/PNG/WebP/GIF，建议 ≤ 640px 方图；没有就用渐变色首字头像 |
 
 `#` 开头的行会被忽略。名单和头像由 `deploy.sh`（或单独的 `node scripts/push-roster.ts`）上传，网站一分钟内自动同步：新人出现、改名生效、从名单里删掉的人被停用（历史感谢保留）。名单有任何错误时整份不生效，错误显示在管理页。
 
@@ -81,6 +81,7 @@ CSV，第一行是表头，列顺序随意，只有 `email`、`name` 必填。�
    - Account › Account Settings: Read
    - Zone › Workers Routes: Edit、Zone › DNS: Edit（网站域名所在的 zone）
 4. 把它写进 `.env.cloudflare`（`chmod 600`）：
+
    ```
    CLOUDFLARE_API_TOKEN=...
    CLOUDFLARE_ACCOUNT_ID=...
@@ -133,13 +134,13 @@ pnpm run doctor
 
 ## 任务 C：日常改配置
 
-| 想做的事 | 怎么做 |
-|---|---|
+| 想做的事                             | 怎么做                                                                                                                                                          |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 加人 / 删人 / 改名 / 换上级 / 换头像 | 改名单文件和头像 → `node scripts/push-roster.ts`（或整个 `./scripts/deploy.sh`），一分钟内生效。加删了邮箱的话再跑 `./scripts/cloudflare-setup.sh` 更新登录名单 |
-| 改 `.env.production` 里任何一项 | `pnpm run config set KEY VALUE` → `./scripts/deploy.sh` |
-| 开 / 关邮件通知 | `config set EMAIL_NOTIFY 1`（及 `EMAIL_FROM`）→ `./scripts/cloudflare-setup.sh` 检查发信域名 → `./scripts/deploy.sh` → 管理页发测试邮件 |
-| 改品质标签 | 改 `VALUES_FILE` 指向的文件 → `./scripts/deploy.sh`。已用过的标签 id 不要删改，否则旧帖子上的标签不再显示 |
-| 换域名 | `config set PUBLIC_URL ...` → `./scripts/cloudflare-setup.sh` → `./scripts/deploy.sh` |
+| 改 `.env.production` 里任何一项      | `pnpm run config set KEY VALUE` → `./scripts/deploy.sh`                                                                                                         |
+| 开 / 关邮件通知                      | `config set EMAIL_NOTIFY 1`（及 `EMAIL_FROM`）→ `./scripts/cloudflare-setup.sh` 检查发信域名 → `./scripts/deploy.sh` → 管理页发测试邮件                         |
+| 改品质标签                           | 改 `VALUES_FILE` 指向的文件 → `./scripts/deploy.sh`。已用过的标签 id 不要删改，否则旧帖子上的标签不再显示                                                       |
+| 换域名                               | `config set PUBLIC_URL ...` → `./scripts/cloudflare-setup.sh` → `./scripts/deploy.sh`                                                                           |
 
 ## 回滚与排障
 

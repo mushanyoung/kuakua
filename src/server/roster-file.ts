@@ -1,3 +1,4 @@
+import { required } from "../shared/required.ts";
 // The roster is a CSV (or a JSON array of objects with the same keys) listing everyone
 // who can be thanked; see deploy/roster.example.csv. This module only parses and
 // validates text, so the Worker (reading it from R2) and local scripts (reading it from
@@ -7,8 +8,7 @@ export const ROSTER_COLUMNS = ["email", "name", "en_name", "department", "depart
 
 export type RosterAvatar =
   // A path relative to the roster file, normalised to forward slashes ("avatars/alice.jpg").
-  | { kind: "file"; path: string }
-  | { kind: "url"; url: string };
+  { kind: "file"; path: string } | { kind: "url"; url: string };
 
 export type RosterEntry = {
   line: number;
@@ -33,20 +33,30 @@ export function parseCsv(text: string): string[][] {
   let field = "";
   let quoted = false;
   for (let i = 0; i < text.length; i++) {
-    const c = text[i]!;
+    const c = required(text[i]);
     if (quoted) {
-      if (c === '"' && text[i + 1] === '"') (field += '"'), i++;
-      else if (c === '"') quoted = false;
+      if (c === '"' && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (c === '"') quoted = false;
       else field += c;
     } else if (c === '"' && field === "") quoted = true;
-    else if (c === ",") row.push(field), (field = "");
-    else if (c === "\n" || c === "\r") {
+    else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
       if (c === "\r" && text[i + 1] === "\n") i++;
-      row.push(field), rows.push(row), (row = []), (field = "");
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
     } else field += c;
   }
   if (quoted) throw new Error("unterminated quoted field");
-  if (field !== "" || row.length) row.push(field), rows.push(row);
+  if (field !== "" || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
   return rows;
 }
 
@@ -85,7 +95,7 @@ function readRows(text: string, json: boolean): { rows: { line: number; cells: R
   const rows = body
     .map((cells, i) => ({ line: i + 2, cells: Object.fromEntries(columns.map((c, j) => [c, cells[j] ?? ""])) }))
     // Blank lines and lines starting with # are skipped.
-    .filter(({ cells }) => Object.values(cells).some((v) => v.trim()) && !(cells[columns[0]!] ?? "").trim().startsWith("#"));
+    .filter(({ cells }) => Object.values(cells).some((v) => v.trim()) && !(cells[required(columns[0])] ?? "").trim().startsWith("#"));
   return { rows, columns };
 }
 

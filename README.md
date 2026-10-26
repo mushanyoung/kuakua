@@ -48,15 +48,15 @@ pnpm exec wrangler tail -c local/wrangler.json   # 线上实时日志
 
 在 [Lark 开发者后台](https://open.larksuite.com/app)（飞书：open.feishu.cn）给自建应用开通（应用身份）：
 
-| 权限 | 用途 |
-|---|---|
-| `contact:contact.base:readonly` | 读取通讯录 |
-| `contact:user.base:readonly` | 姓名、头像 |
-| `contact:user.email:readonly` | 邮箱，用来和登录邮箱对应 |
-| `contact:user.department:readonly`、`contact:department.base:readonly` | 部门 |
-| `contact:user.employee:readonly` | 职务、入职时间（可选） |
-| `im:message:send_as_bot` + 开启机器人能力 | 被夸时发通知（可选） |
-| `im:chat:read`、`im:chat.members:read` + 开启机器人能力 | 从群聊展开被夸同事（可选，与通知开关独立） |
+| 权限                                                                   | 用途                                       |
+| ---------------------------------------------------------------------- | ------------------------------------------ |
+| `contact:contact.base:readonly`                                        | 读取通讯录                                 |
+| `contact:user.base:readonly`                                           | 姓名、头像                                 |
+| `contact:user.email:readonly`                                          | 邮箱，用来和登录邮箱对应                   |
+| `contact:user.department:readonly`、`contact:department.base:readonly` | 部门                                       |
+| `contact:user.employee:readonly`                                       | 职务、入职时间（可选）                     |
+| `im:message:send_as_bot` + 开启机器人能力                              | 被夸时发通知（可选）                       |
+| `im:chat:read`、`im:chat.members:read` + 开启机器人能力                | 从群聊展开被夸同事（可选，与通知开关独立） |
 
 并把 **通讯录权限范围** 设为「全部成员」，然后发布新版本。离职或移出范围的同事会自动隐藏，但历史感谢保留。
 

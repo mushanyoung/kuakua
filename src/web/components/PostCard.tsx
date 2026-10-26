@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { LockClosedIcon, SparklesIcon } from "@heroicons/react/20/solid";
 import {
   ArrowRightIcon,
   ChatBubbleOvalLeftIcon,
@@ -8,12 +8,13 @@ import {
   PaperAirplaneIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
-import { LockClosedIcon, SparklesIcon } from "@heroicons/react/20/solid";
+import { type FormEvent, type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { required } from "../../shared/required.ts";
+import { LIMITS, PLUS_ONE, REACTIONS } from "../../shared/values";
 import { api, type Comment, type Feed, type Post, type PostDetail, type Users } from "../api";
 import { errorText, relativeTime } from "../i18n";
 import { Link, navigate } from "../router";
 import { useApp } from "../state";
-import { LIMITS, PLUS_ONE, REACTIONS } from "../../shared/values";
 import { Avatar, AvatarStack, UserName, ValueChip } from "./ui";
 
 export function PostCard({
@@ -52,7 +53,7 @@ export function PostCard({
     try {
       const res = await api<Feed>(`/api/posts/${post.id}/reactions`, { method: "POST", body: { emoji } });
       mergeUsers(res.users);
-      onChange(res.posts[0]!);
+      onChange(required(res.posts[0]));
     } catch (e) {
       toast(errorText(t, (e as { code: string }).code), "error");
     }
@@ -80,7 +81,8 @@ export function PostCard({
     const el = e.target as Element;
     // A click that just dismissed a popover shouldn't also navigate away.
     if (popoverWasOpen.current) return;
-    if (el.closest("a, button, input, textarea, .popover, .comments, .avatar, .private-badge, .kind-badge, .points-badge, .value-chip")) return;
+    if (el.closest("a, button, input, textarea, .popover, .comments, .avatar, .private-badge, .kind-badge, .points-badge, .value-chip"))
+      return;
     // Text stays selectable: a drag-select or a click on the words themselves doesn't count.
     if (window.getSelection()?.toString()) return;
     if (!el.closest('[aria-hidden="true"]') && overText(el, e.clientX, e.clientY)) return;
@@ -97,6 +99,10 @@ export function PostCard({
       className={`post ${bonus ? "bonus" : ""} ${fresh ? "fresh" : ""} ${linked ? "linked" : ""}`}
       onPointerDown={linked ? () => (popoverWasOpen.current = picker || menu) : undefined}
       onClick={linked ? openFromBlank : undefined}
+      onKeyDown={(e) => {
+        if (linked && e.target === e.currentTarget && e.key === "Enter") navigate(`/k/${post.id}`);
+      }}
+      tabIndex={linked ? 0 : undefined}
     >
       {bonus && <div className="post-glow" aria-hidden="true" />}
       <header className="post-head">
@@ -205,7 +211,12 @@ export function PostCard({
             );
           })}
           {!post.reactions.some((r) => r.emoji === PLUS_ONE) && (
-            <button type="button" className={`reaction ghost ${burst === PLUS_ONE ? "pop" : ""}`} onClick={() => react(PLUS_ONE)} title={t("post.plusOne")}>
+            <button
+              type="button"
+              className={`reaction ghost ${burst === PLUS_ONE ? "pop" : ""}`}
+              onClick={() => react(PLUS_ONE)}
+              title={t("post.plusOne")}
+            >
               <span className="emo plus-one">+1</span>
             </button>
           )}
@@ -310,7 +321,7 @@ function Comments({ post, onCount }: { post: Post; onCount: (n: number) => void 
         setComments(d.comments);
       })
       .catch(() => setComments([]));
-  }, [post.id]);
+  }, [post.id, mergeUsers]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();

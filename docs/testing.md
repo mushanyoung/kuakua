@@ -7,3 +7,9 @@
 执行 `pnpm run typecheck` 检查 strict 类型，`pnpm run build` 验证生产网页与 Worker 打包。部署配置体检 `pnpm run doctor` 属于部署任务，不要求开发者拥有线上配置。
 
 不得用关规则、skip、宽松断言或 mock 掉被验证行为来通过检查。必须修复真实问题；必要例外限定至具体文件或行，说明原因并在本页记录。自动生成的 Worker 类型由 `pnpm run types` 更新，不手工格式化。
+
+## Biome 门槛与例外
+
+`pnpm run format:check` 与 `pnpm run lint` 均将警告视为失败；`pnpm run format` 格式化，`pnpm run lint:fix` 只应用安全修复。启用全部 recommended 基线，不关闭规则。生成的 `src/server/worker-configuration.d.ts` 和 `pnpm-lock.yaml` 排除手工格式化，由各自工具生成。
+
+仅保留以下就地说明的例外：`useApi` 的 nonce / 调用方失效键、Feed 的查询切换键、Lark 群选择的重试键是显式 Effect 触发条件，不能按未使用依赖删除；reduced-motion 中的四条 `!important` 保证用户减少动态效果的偏好覆盖组件及行内动画。所有例外以具体 Effect 或 CSS 声明为范围。

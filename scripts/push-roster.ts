@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { required } from "../src/shared/required.ts";
 import { effective, fileValues, ROOT } from "./lib/env.ts";
 import { imageType, readRosterFile } from "./lib/roster.ts";
 
@@ -27,20 +28,44 @@ if (roster.errors.length) {
 const sha1 = (bytes: Uint8Array) => createHash("sha1").update(bytes).digest("hex");
 const files: { key: string; path: string; type: string }[] = [];
 for (const e of roster.entries) {
-  if (e.avatar?.kind === "file") files.push({ key: `roster/${e.avatar.path}`, path: resolve(roster.dir, e.avatar.path), type: imageType(resolve(roster.dir, e.avatar.path))! });
+  if (e.avatar?.kind === "file")
+    files.push({
+      key: `roster/${e.avatar.path}`,
+      path: resolve(roster.dir, e.avatar.path),
+      type: required(imageType(resolve(roster.dir, e.avatar.path))),
+    });
 }
 const json = rosterFile.toLowerCase().endsWith(".json");
-files.push({ key: json ? "roster/roster.json" : "roster/roster.csv", path: rosterFile, type: json ? "application/json" : "text/csv; charset=utf-8" });
+files.push({
+  key: json ? "roster/roster.json" : "roster/roster.csv",
+  path: rosterFile,
+  type: json ? "application/json" : "text/csv; charset=utf-8",
+});
 
 const manifestFile = join(ROOT, "local/roster-uploaded.json");
 const manifest: Record<string, Record<string, string>> = existsSync(manifestFile) ? JSON.parse(readFileSync(manifestFile, "utf8")) : {};
 const target = `${local ? "local" : "remote"}:${bucket}`;
-const uploaded = (manifest[target] ??= {});
+manifest[target] ??= {};
+const uploaded = manifest[target];
 
 function put(key: string, path: string, type: string) {
-  const args = ["exec", "wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", path, "--content-type", type, local ? "--local" : "--remote", ...configArgs];
+  const args = [
+    "exec",
+    "wrangler",
+    "r2",
+    "object",
+    "put",
+    `${bucket}/${key}`,
+    "--file",
+    path,
+    "--content-type",
+    type,
+    local ? "--local" : "--remote",
+    ...configArgs,
+  ];
   const res = spawnSync("pnpm", args, { cwd: ROOT, stdio: ["ignore", "ignore", "pipe"] });
-  if (res.status !== 0) throw new Error(`upload ${key} failed: ${(res.error?.message ?? res.stderr?.toString() ?? "unknown process failure").trim()}`);
+  if (res.status !== 0)
+    throw new Error(`upload ${key} failed: ${(res.error?.message ?? res.stderr?.toString() ?? "unknown process failure").trim()}`);
 }
 
 const seen = new Set<string>();
@@ -55,7 +80,14 @@ for (const f of files) {
   count++;
 }
 // One object whose content changes whenever any of the above does.
-const version = sha1(new TextEncoder().encode([...seen].sort().map((k) => `${k}:${uploaded[k]}`).join("\n")));
+const version = sha1(
+  new TextEncoder().encode(
+    [...seen]
+      .sort()
+      .map((k) => `${k}:${uploaded[k]}`)
+      .join("\n"),
+  ),
+);
 if (uploaded["roster/_version"] !== version) {
   const tmp = join(ROOT, "local/.roster-version");
   mkdirSync(join(ROOT, "local"), { recursive: true });
@@ -64,5 +96,5 @@ if (uploaded["roster/_version"] !== version) {
   uploaded["roster/_version"] = version;
 }
 mkdirSync(join(ROOT, "local"), { recursive: true });
-writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
+writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`roster: ${roster.entries.length} people; uploaded ${count} changed file(s) to ${target}`);

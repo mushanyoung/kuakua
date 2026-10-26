@@ -1,0 +1,200 @@
+/* leaderboard */
+.podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 28px;
+}
+.podium-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 28px 16px 0;
+  text-align: center;
+  border-radius: 28px 28px 20px 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+  border: 1px solid var(--line);
+  overflow: hidden;
+  animation: rise 0.6s var(--ease-out) both;
+}
+.podium-slot.empty {
+  visibility: hidden;
+}
+.podium-slot.p1 {
+  padding-top: 36px;
+  animation-delay: 0.08s;
+  background:
+    radial-gradient(100% 70% at 50% 0%, rgba(255, 210, 122, 0.18), transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015));
+  border-color: rgba(255, 210, 122, 0.3);
+}
+.podium-slot.p2 {
+  animation-delay: 0.16s;
+}
+.podium-slot.p3 {
+  animation-delay: 0.24s;
+}
+.podium-avatar {
+  position: relative;
+  margin-bottom: 12px;
+}
+.podium-avatar .avatar {
+  padding: 3px;
+  background: var(--grad-cool);
+  box-shadow: 0 16px 40px -14px rgba(183, 155, 255, 0.8);
+}
+.p1 .podium-avatar .avatar {
+  background: var(--grad-gold);
+  box-shadow:
+    0 0 0 6px rgba(255, 210, 122, 0.08),
+    0 20px 60px -12px rgba(255, 190, 110, 0.9);
+  animation: halo 3.2s ease-in-out infinite;
+}
+.p3 .podium-avatar .avatar {
+  background: var(--grad-warm);
+  box-shadow: 0 16px 40px -14px rgba(255, 130, 120, 0.8);
+}
+.podium-avatar .avatar img {
+  border: 3px solid var(--bg);
+}
+@keyframes halo {
+  50% {
+    box-shadow:
+      0 0 0 12px rgba(255, 210, 122, 0.04),
+      0 24px 70px -10px rgba(255, 190, 110, 1);
+  }
+}
+.podium-rank {
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  width: 30px;
+  height: 30px;
+  margin-left: -15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--ink-on-warm);
+  background: var(--grad-cool);
+  box-shadow: 0 0 0 3px var(--bg);
+}
+.p1 .podium-rank {
+  background: var(--grad-gold);
+}
+.p3 .podium-rank {
+  background: var(--grad-warm);
+}
+.podium-name {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 750;
+}
+.podium-count {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 6px;
+  font-family: var(--font-display);
+}
+.podium-count b {
+  font-size: 40px;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.p1 .podium-count b {
+  font-size: 52px;
+  background: var(--grad-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.podium-count .gold {
+  font-weight: 700;
+  font-size: 15px;
+}
+.podium-base {
+  width: calc(100% + 32px);
+  height: 26px;
+  margin-top: 16px;
+  background: linear-gradient(180deg, rgba(183, 155, 255, 0.18), transparent);
+}
+.p1 .podium-base {
+  height: 44px;
+  background: linear-gradient(180deg, rgba(255, 210, 122, 0.22), transparent);
+}
+.p3 .podium-base {
+  height: 14px;
+  background: linear-gradient(180deg, rgba(255, 130, 120, 0.2), transparent);
+}
+.board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.board li {
+  display: grid;
+  grid-template-columns: 36px 40px minmax(0, 1fr) minmax(80px, 200px) 44px 60px;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line);
+  animation: rise 0.45s var(--ease-out) both;
+}
+.board .rank {
+  width: auto;
+  font-size: 14px;
+}
+.board-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+.board-name small {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board-bar {
+  height: 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.board-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--grad-warm);
+  animation: grow 0.9s var(--ease-out) both;
+  transform-origin: left;
+}
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+.board-count {
+  font-family: var(--font-display);
+  font-weight: 750;
+  font-size: 20px;
+  text-align: right;
+}
+.board-points {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  text-align: right;
+}

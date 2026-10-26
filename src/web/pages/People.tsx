@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeftIcon } from "@heroicons/react/20/solid";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { altName } from "../api";
 import { Avatar, Empty, Spinner } from "../components/ui";
-import { Link, navigate } from "../router";
-import { ArrowLeftIcon } from "@heroicons/react/20/solid";
+import { Link } from "../router";
 import { useApp } from "../state";
 
 export function People() {
@@ -22,7 +22,7 @@ export function People() {
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, []);
+  }, [loadDirectory]);
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -41,7 +41,9 @@ export function People() {
       <header className="page-head">
         <div>
           <h1 className="page-title">{t("people.title")}</h1>
-          <p className="muted">{t(me.config.directory === "lark" ? "people.subLark" : "people.sub", { n: directory?.users.length ?? "…" })}</p>
+          <p className="muted">
+            {t(me.config.directory === "lark" ? "people.subLark" : "people.sub", { n: directory?.users.length ?? "…" })}
+          </p>
         </div>
       </header>
 
@@ -67,13 +69,8 @@ export function People() {
       {directory && list.length === 0 && <Empty title={t("people.empty")} />}
       <div className="people-grid">
         {list.map((u, i) => (
-          <div
-            key={u.id}
-            className="person"
-            style={{ animationDelay: `${Math.min(i, 24) * 18}ms` }}
-            onClick={() => navigate(`/u/${u.id}`)}
-          >
-            <Avatar user={u} size={72} link={false} ring={(u.received ?? 0) > 0} />
+          <article key={u.id} className="person" style={{ animationDelay: `${Math.min(i, 24) * 18}ms` }}>
+            <Avatar user={u} size={72} ring={(u.received ?? 0) > 0} />
             <Link to={`/u/${u.id}`} className="person-name" onClick={(e) => e.stopPropagation()}>
               {name(u)}
             </Link>
@@ -87,13 +84,16 @@ export function People() {
                 <button
                   type="button"
                   className="btn soft sm"
-                  onClick={(e) => (e.stopPropagation(), openComposer({ recipientIds: [u.id] }))}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openComposer({ recipientIds: [u.id] });
+                  }}
                 >
                   {t("side.thank")}
                 </button>
               )}
             </div>
-          </div>
+          </article>
         ))}
       </div>
     </div>

@@ -4,12 +4,21 @@ import { once } from "node:events";
 import { resolve } from "node:path";
 
 const cwd = resolve(import.meta.dirname, "..");
-for (const args of [["exec", "wrangler", "d1", "migrations", "apply", "kuakua", "--local"], ["run", "build:web"]]) {
+for (const args of [
+  ["exec", "wrangler", "d1", "migrations", "apply", "kuakua", "--local"],
+  ["run", "build:web"],
+]) {
   if (spawnSync("pnpm", args, { cwd, stdio: "inherit" }).status !== 0) process.exit(1);
 }
 const web = spawn(process.execPath, ["scripts/build-web.ts", "--watch"], { cwd, stdio: "inherit" });
-const worker = spawn("pnpm", ["exec", "wrangler", "dev", "--port", "4381", "--ip", "127.0.0.1", "--test-scheduled"], { cwd, stdio: "inherit" });
-const stop = () => { web.kill(); worker.kill(); };
+const worker = spawn("pnpm", ["exec", "wrangler", "dev", "--port", "4381", "--ip", "127.0.0.1", "--test-scheduled"], {
+  cwd,
+  stdio: "inherit",
+});
+const stop = () => {
+  web.kill();
+  worker.kill();
+};
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 try {

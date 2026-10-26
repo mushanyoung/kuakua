@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
 import { UserGroupIcon } from "@heroicons/react/24/outline";
-import { api, ApiError, type LarkChat, type LarkChatMembers, type LarkChatPage, type Users } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { ApiError, api, type LarkChat, type LarkChatMembers, type LarkChatPage, type Users } from "../api";
 import { errorText } from "../i18n";
 import { useApp } from "../state";
 
@@ -17,7 +17,11 @@ async function* pages<T extends { nextCursor: string | null }>(path: string, sig
   } while (cursor);
 }
 
-export function LarkChatPicker({ onAdd, onBusyChange, disabled }: {
+export function LarkChatPicker({
+  onAdd,
+  onBusyChange,
+  disabled,
+}: {
   onAdd: (users: Users, skipped: number) => string;
   onBusyChange: (busy: boolean) => void;
   disabled: boolean;
@@ -36,9 +40,17 @@ export function LarkChatPicker({ onAdd, onBusyChange, disabled }: {
   const toggleRef = useRef<HTMLButtonElement>(null);
   const addLatest = useRef(onAdd);
   // Use the latest recipients, CC and post kind even if they change during loading.
-  useEffect(() => { addLatest.current = onAdd; }, [onAdd]);
-  useEffect(() => () => { memberRequest.current?.abort(); }, []);
+  useEffect(() => {
+    addLatest.current = onAdd;
+  }, [onAdd]);
+  useEffect(
+    () => () => {
+      memberRequest.current?.abort();
+    },
+    [],
+  );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is an explicit retry trigger after a failed request.
   useEffect(() => {
     if (!open) return;
     const request = new AbortController();
@@ -100,47 +112,94 @@ export function LarkChatPicker({ onAdd, onBusyChange, disabled }: {
   const needle = query.trim().toLocaleLowerCase();
   const matches = chats.filter((c) => c.name.toLocaleLowerCase().includes(needle));
   return (
-    <div className="lark-picker" onKeyDown={(e) => {
-      if (e.key === "Escape" && open) {
-        e.stopPropagation();
-        cancel();
-        setOpen(false);
-        toggleRef.current?.focus();
-      }
-    }}>
-      <button ref={toggleRef} type="button" className="lark-chat-toggle" disabled={disabled}
-        aria-expanded={open} aria-controls="composer-lark-chats"
-        onClick={() => { cancel(); setMemberError(null); setOpen(!open); }}>
+    <fieldset
+      className="lark-picker"
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && open) {
+          e.stopPropagation();
+          cancel();
+          setOpen(false);
+          toggleRef.current?.focus();
+        }
+      }}
+    >
+      <button
+        ref={toggleRef}
+        type="button"
+        className="lark-chat-toggle"
+        disabled={disabled}
+        aria-expanded={open}
+        aria-controls="composer-lark-chats"
+        onClick={() => {
+          cancel();
+          setMemberError(null);
+          setOpen(!open);
+        }}
+      >
         <UserGroupIcon className="ic" /> {t("composer.fromLarkChat")}
       </button>
       {open && (
         <div id="composer-lark-chats" className="lark-chat-panel">
           <p className="hint">{t("composer.larkChatHint")}</p>
-          <input className="lark-chat-search" value={query} onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("composer.larkChatSearch")} aria-label={t("composer.larkChatSearch")}
-            onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} />
+          <input
+            className="lark-chat-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("composer.larkChatSearch")}
+            aria-label={t("composer.larkChatSearch")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.preventDefault();
+            }}
+          />
           <ul className="lark-chat-list" aria-label={t("composer.fromLarkChat")}>
             {matches.map((chat) => (
               <li key={chat.id}>
                 <button type="button" disabled={disabled || loadingChat !== null} onClick={() => select(chat)}>
                   <UserGroupIcon className="ic" />
-                  <span><b>{chat.name}</b>{chat.description && <small>{chat.description}</small>}</span>
+                  <span>
+                    <b>{chat.name}</b>
+                    {chat.description && <small>{chat.description}</small>}
+                  </span>
                 </button>
               </li>
             ))}
           </ul>
-          {loading && <p className="hint" role="status">{t("loading")}</p>}
-          {!loading && !listError && matches.length === 0 && <p className="hint">{t(query ? "composer.larkChatNoMatch" : "composer.larkChatEmpty")}</p>}
-          {listError && <div className="form-error" role="alert">
-            {errorText(t, listError)} <button type="button" className="link-btn" onClick={() => setReload((n) => n + 1)}>{t("retry")}</button>
-          </div>}
-          {loadingChat && <p className="hint" role="status">
-            {t("composer.larkChatLoading")} <button type="button" className="link-btn" onClick={cancel}>{t("cancel")}</button>
-          </p>}
-          {memberError && <div className="form-error" role="alert">{errorText(t, memberError)}</div>}
+          {loading && (
+            <p className="hint" role="status">
+              {t("loading")}
+            </p>
+          )}
+          {!loading && !listError && matches.length === 0 && (
+            <p className="hint">{t(query ? "composer.larkChatNoMatch" : "composer.larkChatEmpty")}</p>
+          )}
+          {listError && (
+            <div className="form-error" role="alert">
+              {errorText(t, listError)}{" "}
+              <button type="button" className="link-btn" onClick={() => setReload((n) => n + 1)}>
+                {t("retry")}
+              </button>
+            </div>
+          )}
+          {loadingChat && (
+            <p className="hint" role="status">
+              {t("composer.larkChatLoading")}{" "}
+              <button type="button" className="link-btn" onClick={cancel}>
+                {t("cancel")}
+              </button>
+            </p>
+          )}
+          {memberError && (
+            <div className="form-error" role="alert">
+              {errorText(t, memberError)}
+            </div>
+          )}
         </div>
       )}
-      {notice && <p className="hint lark-chat-notice" role="status">{notice}</p>}
-    </div>
+      {notice && (
+        <p className="hint lark-chat-notice" role="status">
+          {notice}
+        </p>
+      )}
+    </fieldset>
   );
 }

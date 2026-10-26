@@ -1,8 +1,9 @@
+import { required } from "../shared/required.ts";
+import { valueById } from "../shared/values";
 import { config, emailNotifyEnabled, larkNotifyEnabled } from "./config";
 import { db } from "./db";
 import { sendEmailNotices } from "./email";
 import { sendLarkNotices } from "./lark";
-import { valueById } from "../shared/values";
 
 // Who hears about a new thanks, and in what words. The channels (lark.ts, email.ts) only
 // decide how to deliver each Notice:
@@ -111,7 +112,7 @@ export function buildNotices(post: NotifyPost, people: Map<number, Person>, send
   // In the sender's own receipt they appear as "yourself".
   const list = (ids: number[], lang: Lang, self?: number) => {
     const c = copy[lang];
-    const all = ids.map((id) => (id === self ? c.self : people.get(id) ? nameIn(people.get(id)!, lang) : "?"));
+    const all = ids.map((id) => (id === self ? c.self : people.get(id) ? nameIn(required(people.get(id)), lang) : "?"));
     return all.length <= 3 ? all.join(c.sep) : all.slice(0, 3).join(c.sep) + c.andMore(all.length);
   };
   const details = (lang: Lang, withCc: boolean, self?: number) => {

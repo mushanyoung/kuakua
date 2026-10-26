@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
 import { CheckIcon, LinkIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { type User } from "../api";
+import { useEffect, useRef, useState } from "react";
+import type { User } from "../api";
 import { Link, navigate } from "../router";
 import { useApp } from "../state";
 import { Avatar, Empty, Spinner } from "./ui";
@@ -33,7 +33,7 @@ function KuaLinkDialog({ user, onClose }: { user: User; onClose: () => void }) {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, []);
+  }, [onClose]);
 
   async function copy() {
     try {
@@ -58,7 +58,9 @@ function KuaLinkDialog({ user, onClose }: { user: User; onClose: () => void }) {
         </div>
         <div className="kua-who">
           <Avatar user={user} size={44} link={false} ring />
-          <p className="muted">{self ? t(me.config.directory === "lark" ? "kua.descSelfLark" : "kua.descSelf") : t("kua.desc", { name: name(user) })}</p>
+          <p className="muted">
+            {self ? t(me.config.directory === "lark" ? "kua.descSelfLark" : "kua.descSelf") : t("kua.desc", { name: name(user) })}
+          </p>
         </div>
         <div className="kua-copy">
           <input ref={input} readOnly value={url} onFocus={(e) => e.target.select()} aria-label={t("kua.button")} />
@@ -83,7 +85,8 @@ export function KuaLinkPage({ handle }: { handle: string }) {
       .then((d) => {
         if (!alive) return;
         const h = handle.toLowerCase();
-        const u = d.users.find((x) => x.handle?.toLowerCase() === h) ?? (/^\d+$/.test(h) ? d.users.find((x) => x.id === Number(h)) : undefined);
+        const u =
+          d.users.find((x) => x.handle?.toLowerCase() === h) ?? (/^\d+$/.test(h) ? d.users.find((x) => x.id === Number(h)) : undefined);
         if (!u) return setMissing(true);
         navigate(`/u/${u.id}`, { replace: true });
         if (u.id === me.user.id) toast(t("kua.self"));
@@ -93,7 +96,7 @@ export function KuaLinkPage({ handle }: { handle: string }) {
     return () => {
       alive = false;
     };
-  }, [handle]);
+  }, [handle, loadDirectory, openComposer, toast, t, me.user.id]);
 
   if (!missing) return <Spinner label={t("loading")} />;
   return (

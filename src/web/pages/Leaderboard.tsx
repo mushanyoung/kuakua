@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { type Users } from "../api";
-import { Avatar, Empty, Segmented, Spinner, UserName } from "../components/ui";
 import { ArrowLeftIcon } from "@heroicons/react/20/solid";
+import { useState } from "react";
+import type { Users } from "../api";
+import { Avatar, Empty, Segmented, Spinner, UserName } from "../components/ui";
 import { Link } from "../router";
-import { useApp, useApi } from "../state";
+import { useApi, useApp } from "../state";
 
 type Range = "month" | "quarter" | "year" | "all";
 type Type = "received" | "given";
@@ -65,7 +65,7 @@ export function Leaderboard() {
       {top.length > 0 && (
         <section className="podium">
           {podium.map((r, i) => {
-            if (!r) return <div key={i} className="podium-slot empty" />;
+            if (!r) return <div key={`empty-${["second", "first", "third"][i]}`} className="podium-slot empty" />;
             const place = rows.indexOf(r) + 1;
             return (
               <div key={r.userId} className={`podium-slot p${place}`}>

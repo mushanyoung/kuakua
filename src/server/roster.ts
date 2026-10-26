@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { required } from "../shared/required.ts";
 import { putAvatar, shortHash } from "./avatars";
 import { db, q } from "./db";
 import type { SyncResult } from "./directory";
@@ -59,7 +60,10 @@ export async function syncRoster(): Promise<SyncResult> {
     } else if (e.avatar?.kind === "url") {
       // Remote images are downloaded only when the URL changes.
       if (prev?.avatar_src === e.avatar.url && prev.avatar_ver) avatar = { src: e.avatar.url, ver: prev.avatar_ver, key: prev.avatar_key };
-      else (avatar = { src: e.avatar.url, ver: null, key: null }), remote.push({ email: e.email, url: e.avatar.url });
+      else {
+        avatar = { src: e.avatar.url, ver: null, key: null };
+        remote.push({ email: e.email, url: e.avatar.url });
+      }
     }
     if (avatar?.ver && avatar.ver !== prev?.avatar_ver) avatarsUpdated++;
     return {
@@ -113,7 +117,7 @@ export async function syncRoster(): Promise<SyncResult> {
     const idOf = new Map(ids.map((r) => [r.email, r.id]));
     const done: { id: number; ver: string; key: string }[] = [];
     for (const { email, url } of remote) {
-      const id = idOf.get(email)!;
+      const id = required(idOf.get(email));
       try {
         const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

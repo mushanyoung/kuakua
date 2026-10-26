@@ -1,5 +1,6 @@
+import { required } from "../shared/required.ts";
 import { larkChatsEnabled } from "./config";
-import { lark, LarkApiError } from "./lark";
+import { LarkApiError, lark } from "./lark";
 import { activeLarkUsersByOpenIds, HttpError } from "./store";
 
 type Page<T> = { items: T[]; has_more: boolean; page_token?: string };
@@ -13,11 +14,15 @@ async function chatPage<T>(path: string, cursor: string | undefined, query: Reco
   if (cursor && cursor.length > 2048) throw new HttpError(400, "lark_chat_invalid");
   try {
     const data = await lark<Page<T>>("GET", path, { ...query, page_size: "100", page_token: cursor });
-    if (!data || !Array.isArray(data.items) || typeof data.has_more !== "boolean"
-      || (data.has_more && (!data.page_token || data.page_token === cursor))) {
+    if (
+      !data ||
+      !Array.isArray(data.items) ||
+      typeof data.has_more !== "boolean" ||
+      (data.has_more && (!data.page_token || data.page_token === cursor))
+    ) {
       throw new Error("Incomplete Lark chat page");
     }
-    return { items: data.items, nextCursor: data.has_more ? data.page_token! : null };
+    return { items: data.items, nextCursor: data.has_more ? required(data.page_token) : null };
   } catch (e) {
     if (e instanceof LarkApiError) {
       if ([99991672, 99991676, 99991679, 232025, 232034].includes(e.code)) {

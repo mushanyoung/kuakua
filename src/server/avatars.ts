@@ -1,7 +1,8 @@
 import { env } from "cloudflare:workers";
-import { avatarVersion, HttpError, toUser, userRowById, type UserRow, type Viewer } from "./store";
-import { db } from "./db";
 import { AVATAR_TYPES, MAX_AVATAR_BYTES } from "../shared/avatars";
+import { required } from "../shared/required.ts";
+import { db } from "./db";
+import { avatarVersion, HttpError, toUser, type UserRow, userRowById, type Viewer } from "./store";
 
 // Avatars live in R2 (the FILES bucket). users.avatar_key names the 240px image; Lark
 // avatars also have a 640px one at the same key with "-640". Roster avatars are served
@@ -30,14 +31,14 @@ function initials(name: string) {
   const trimmed = name.trim();
   if (/[㐀-鿿]/.test(trimmed)) return [...trimmed].slice(-2).join("");
   const words = trimmed.split(/[\s._-]+/).filter(Boolean);
-  return (words.length > 1 ? words[0]![0]! + words[1]![0]! : trimmed.slice(0, 2)).toUpperCase();
+  return (words.length > 1 ? required(required(words[0])[0]) + required(required(words[1])[0]) : trimmed.slice(0, 2)).toUpperCase();
 }
 
-const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const escapeXml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function placeholder(id: number, name: string) {
-  const [a, b] = GRADIENTS[id % GRADIENTS.length]!;
-  const text = escape(initials(name) || "?");
+  const [a, b] = required(GRADIENTS[id % GRADIENTS.length]);
+  const text = escapeXml(initials(name) || "?");
   const size = [...text].length > 1 && /[㐀-鿿]/.test(text) ? 34 : 40;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
 <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs>
@@ -49,7 +50,11 @@ function placeholder(id: number, name: string) {
 
 export function sniff(bytes: Uint8Array) {
   const at = (offset: number, signature: number[]) => signature.every((b, i) => bytes[offset + i] === b);
-  const ascii = (offset: number, text: string) => at(offset, [...text].map((c) => c.charCodeAt(0)));
+  const ascii = (offset: number, text: string) =>
+    at(
+      offset,
+      [...text].map((c) => c.charCodeAt(0)),
+    );
   if (bytes.length >= 4 && at(0, [0xff, 0xd8, 0xff])) return "image/jpeg";
   if (bytes.length >= 24 && at(0, [0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10]) && ascii(12, "IHDR")) return "image/png";
   if (bytes.length >= 20 && ascii(0, "RIFF") && ascii(8, "WEBP")) return "image/webp";
@@ -122,7 +127,7 @@ export async function uploadAvatar(id: number, viewer: Viewer, req: Request) {
     throw e;
   }
   if (row.custom_avatar_key) await cleanup(row.custom_avatar_key);
-  return toUser((await userRowById(id))!);
+  return toUser(required(await userRowById(id)));
 }
 
 export async function removeAvatar(id: number, viewer: Viewer) {
@@ -131,7 +136,7 @@ export async function removeAvatar(id: number, viewer: Viewer) {
     await replaceCustomAvatar(row, null);
     await cleanup(row.custom_avatar_key);
   }
-  return toUser((await userRowById(id))!);
+  return toUser(required(await userRowById(id)));
 }
 
 export async function serveAvatar(id: number, size: string | null, version: string | null) {
@@ -139,13 +144,14 @@ export async function serveAvatar(id: number, size: string | null, version: stri
   if (!row) return new Response("not found", { status: 404 });
   // Never cache today's bytes under a stale version URL after a replacement or removal.
   let cache = version === avatarVersion(row) ? "private, max-age=31536000, immutable" : "private, no-store";
-  const imageResponse = (obj: R2ObjectBody) => new Response(obj.body, {
-    headers: {
-      "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
-      "Cache-Control": cache,
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+  const imageResponse = (obj: R2ObjectBody) =>
+    new Response(obj.body, {
+      headers: {
+        "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+        "Cache-Control": cache,
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   if (row.custom_avatar_key) {
     const obj = await env.FILES.get(row.custom_avatar_key);
     if (obj) return imageResponse(obj);

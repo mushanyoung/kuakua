@@ -28,3 +28,7 @@ pnpm run dev
 ## 文档维护
 
 `docs/` 只放现行的项目约束、决策理由与操作方法；过时操作直接删除，需要追溯的旧方案才移到 `docs/archive/`。模块特有约束在该目录的 `AGENTS.md`，根入口通过导航说明何时读取。`CLAUDE.md` 只引用根入口，避免多份规范漂移。
+
+## 格式与样式
+
+`pnpm run format:check`、`pnpm run lint` 不得有警告或错误，使用 `pnpm run format` / `pnpm run lint:fix` 修复。主题分布在 `src/web/styles/`，由入口 CSS 按原有顺序导入；通用布局使用 Tailwind。头像的行内大小通过 CSS 变量提供，响应式样式可正常覆盖。原生 dialog 提供焦点约束和 Escape 关闭，人员选择器支持键盘选择。

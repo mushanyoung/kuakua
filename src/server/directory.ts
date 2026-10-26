@@ -64,7 +64,9 @@ export async function syncDirectory(trigger: string): Promise<SyncResult | null>
         id: run.id,
       },
     );
-    log(`${source} sync ok in ${((Date.now() - now) / 1000).toFixed(1)} s: ${r.seen} people (${r.active} active), ${r.avatarsUpdated} avatars updated`);
+    log(
+      `${source} sync ok in ${((Date.now() - now) / 1000).toFixed(1)} s: ${r.seen} people (${r.active} active), ${r.avatarsUpdated} avatars updated`,
+    );
     for (const w of r.warnings) log("warning:", w);
     return r;
   } catch (e) {

@@ -1,7 +1,8 @@
+import { required } from "../shared/required.ts";
+import { isValueId, LIMITS, REACTIONS } from "../shared/values";
 import { ADMIN_EMAILS, config, isAllowedEmail } from "./config";
 import { db, q } from "./db";
-import { periodBounds, periodOf, rangeStart, type Range } from "./time";
-import { LIMITS, REACTIONS, isValueId } from "../shared/values";
+import { periodBounds, periodOf, type Range, rangeStart } from "./time";
 
 export class HttpError extends Error {
   constructor(
@@ -75,7 +76,7 @@ export function toUser(r: UserRow): UserDTO {
     title: r.job_title || null,
     active: r.active === 1,
     joinedAt: r.joined_at,
-    handle: r.email ? r.email.split("@")[0]! : null,
+    handle: r.email ? required(r.email.split("@")[0]) : null,
     leaderId: r.leader_id ?? null,
   };
 }
@@ -105,9 +106,7 @@ export type Viewer = { id: number; email: string; isAdmin: boolean; row: UserRow
 export async function canSignIn(email: string) {
   email = email.toLowerCase();
   if (isAllowedEmail(email)) return true;
-  return Boolean(
-    await db.get("SELECT 1 AS ok FROM users WHERE email = $email AND active = 1 AND source IN ('lark', 'roster')", { email }),
-  );
+  return Boolean(await db.get("SELECT 1 AS ok FROM users WHERE email = $email AND active = 1 AND source IN ('lark', 'roster')", { email }));
 }
 
 export async function resolveViewer(email: string): Promise<Viewer> {
@@ -121,9 +120,9 @@ export async function resolveViewer(email: string): Promise<Viewer> {
     await db.run(
       `INSERT OR IGNORE INTO users (email, name, source, active, created_at, updated_at, last_seen_at)
        VALUES ($email, $name, 'login', 1, $now, $now, $now)`,
-      { email, name: email.split("@")[0]!, now },
+      { email, name: required(email.split("@")[0]), now },
     );
-    row = (await byEmail())!;
+    row = required(await byEmail());
   } else if (!row.last_seen_at || now - row.last_seen_at > 5 * 60_000) {
     await db.run("UPDATE users SET last_seen_at = $now WHERE id = $id", { now, id: row.id });
   }
@@ -145,10 +144,11 @@ export async function setPrefs(userId: number, prefs: { lang?: unknown; emailNot
 // ---------------------------------------------------------------- directory
 
 export async function activeLarkUsersByOpenIds(openIds: string[]) {
-  return toUsers(await db.all<UserRow>(
-    `${USER_SELECT} WHERE u.active = 1 AND u.source = 'lark' AND u.open_id IN (SELECT value FROM json_each($ids))`,
-    { ids: JSON.stringify(openIds) },
-  ));
+  return toUsers(
+    await db.all<UserRow>(`${USER_SELECT} WHERE u.active = 1 AND u.source = 'lark' AND u.open_id IN (SELECT value FROM json_each($ids))`, {
+      ids: JSON.stringify(openIds),
+    }),
+  );
 }
 
 export async function listUsers(viewer: Viewer) {
@@ -166,10 +166,10 @@ export async function listUsers(viewer: Viewer) {
     ),
   ]);
   const counts: Record<number, number> = {};
-  for (const r of received!.results as { id: number; n: number }[]) counts[r.id] = r.n;
+  for (const r of required(received).results as { id: number; n: number }[]) counts[r.id] = r.n;
   return {
-    users: (users!.results as UserRow[]).map((r) => ({ ...toUser(r), received: counts[r.id] ?? 0 })),
-    departments: departments!.results,
+    users: (required(users).results as UserRow[]).map((r) => ({ ...toUser(r), received: counts[r.id] ?? 0 })),
+    departments: required(departments).results,
   };
 }
 
@@ -265,19 +265,24 @@ async function hydrate(rows: PostRow[], viewer: Viewer, extraUserIds: number[] =
     byPost.set(r.id, dto);
     return dto;
   });
-  for (const { post_id, user_id } of recipients!.results as { post_id: number; user_id: number }[]) {
-    byPost.get(post_id)!.recipientIds.push(user_id);
+  for (const { post_id, user_id } of required(recipients).results as { post_id: number; user_id: number }[]) {
+    required(byPost.get(post_id)).recipientIds.push(user_id);
   }
-  for (const { post_id, user_id } of cc!.results as { post_id: number; user_id: number }[]) byPost.get(post_id)!.ccIds.push(user_id);
-  for (const { post_id, emoji, user_id } of reactions!.results as { post_id: number; emoji: string; user_id: number }[]) {
-    const p = byPost.get(post_id)!;
+  for (const { post_id, user_id } of required(cc).results as { post_id: number; user_id: number }[])
+    required(byPost.get(post_id)).ccIds.push(user_id);
+  for (const { post_id, emoji, user_id } of required(reactions).results as { post_id: number; emoji: string; user_id: number }[]) {
+    const p = required(byPost.get(post_id));
     let group = p.reactions.find((g) => g.emoji === emoji);
-    if (!group) p.reactions.push((group = { emoji, userIds: [] }));
+    if (!group) {
+      group = { emoji, userIds: [] };
+      p.reactions.push(group);
+    }
     group.userIds.push(user_id);
   }
-  for (const { post_id, n } of comments!.results as { post_id: number; n: number }[]) byPost.get(post_id)!.commentCount = n;
+  for (const { post_id, n } of required(comments).results as { post_id: number; n: number }[])
+    required(byPost.get(post_id)).commentCount = n;
   for (const p of posts) p.reactions.sort((a, b) => REACTIONS.indexOf(a.emoji as never) - REACTIONS.indexOf(b.emoji as never));
-  return { posts, users: toUsers(users!.results as UserRow[]) };
+  return { posts, users: toUsers(required(users).results as UserRow[]) };
 }
 
 export type FeedQuery = {
@@ -293,10 +298,22 @@ export type FeedQuery = {
 export async function feed(fq: FeedQuery, viewer: Viewer) {
   const where = ["p.deleted_at IS NULL", visibleTo("p")];
   const params: Record<string, string | number> = { viewer: viewer.id };
-  if (fq.cursor) (where.push("p.id < $cursor"), (params.cursor = fq.cursor));
-  if (fq.after) (where.push("p.id > $after"), (params.after = fq.after));
-  if (fq.kind === "kudos" || fq.kind === "bonus") (where.push("p.kind = $kind"), (params.kind = fq.kind));
-  if (fq.tag && isValueId(fq.tag)) (where.push("p.value_tag = $tag"), (params.tag = fq.tag));
+  if (fq.cursor) {
+    where.push("p.id < $cursor");
+    params.cursor = fq.cursor;
+  }
+  if (fq.after) {
+    where.push("p.id > $after");
+    params.after = fq.after;
+  }
+  if (fq.kind === "kudos" || fq.kind === "bonus") {
+    where.push("p.kind = $kind");
+    params.kind = fq.kind;
+  }
+  if (fq.tag && isValueId(fq.tag)) {
+    where.push("p.value_tag = $tag");
+    params.tag = fq.tag;
+  }
   if (fq.userId) {
     params.user = fq.userId;
     const received = "EXISTS (SELECT 1 FROM post_recipients r WHERE r.post_id = p.id AND r.user_id = $user)";
@@ -308,7 +325,7 @@ export async function feed(fq: FeedQuery, viewer: Viewer) {
   params.limit = limit + 1;
   const rows = await db.all<PostRow>(`SELECT p.* FROM posts p WHERE ${where.join(" AND ")} ORDER BY p.id DESC LIMIT $limit`, params);
   const page = rows.slice(0, limit);
-  return { ...(await hydrate(page, viewer)), nextCursor: rows.length > limit ? page[page.length - 1]!.id : null };
+  return { ...(await hydrate(page, viewer)), nextCursor: rows.length > limit ? required(page[page.length - 1]).id : null };
 }
 
 // Someone else's private post is indistinguishable from a missing one.
@@ -336,7 +353,7 @@ export async function postDetail(id: number, viewer: Viewer) {
     comments.map((c) => c.userId),
   );
   return {
-    post: posts[0]!,
+    post: required(posts[0]),
     users,
     comments: comments.map((c) => ({ ...c, canDelete: viewer.isAdmin || c.userId === viewer.id })),
   };
@@ -415,7 +432,7 @@ export async function createPost(input: NewPost, viewer: Viewer) {
       ids: JSON.stringify(ccIds),
     }),
   ]);
-  const id = (inserted!.results[0] as { id: number } | undefined)?.id;
+  const id = (required(inserted).results[0] as { id: number } | undefined)?.id;
   if (!id) throw new HttpError(409, "insufficient_allowance");
   return id;
 }
@@ -432,10 +449,10 @@ export async function toggleReaction(postId: number, emoji: unknown, viewer: Vie
   const params = { post: postId, user: viewer.id, emoji };
   const removed = await db.run("DELETE FROM reactions WHERE post_id = $post AND user_id = $user AND emoji = $emoji", params);
   if (removed.changes === 0) {
-    await db.run(
-      "INSERT OR IGNORE INTO reactions (post_id, user_id, emoji, created_at) VALUES ($post, $user, $emoji, $now)",
-      { ...params, now: Date.now() },
-    );
+    await db.run("INSERT OR IGNORE INTO reactions (post_id, user_id, emoji, created_at) VALUES ($post, $user, $emoji, $now)", {
+      ...params,
+      now: Date.now(),
+    });
   }
   return hydrate([post], viewer);
 }
@@ -523,7 +540,7 @@ export async function overview() {
        WHERE p.deleted_at IS NULL AND p.private = 0 AND r.user_id <> p.sender_id ORDER BY p.id DESC LIMIT 90`,
     ),
   ]);
-  const graph = edges!.results as { id: number; source: number; target: number; kind: string; at: number }[];
+  const graph = required(edges).results as { id: number; source: number; target: number; kind: string; at: number }[];
   const nodeIds = new Set<number>();
   for (const e of graph) nodeIds.add(e.source).add(e.target);
   if (nodeIds.size < 24) {
@@ -533,10 +550,10 @@ export async function overview() {
     );
     for (const { id } of extra) nodeIds.add(id);
   }
-  const m = month!.results[0] as { posts: number; points: number };
+  const m = required(month).results[0] as { posts: number; points: number };
   return {
-    month: { ...m, people: (people!.results[0] as { people: number }).people },
-    total: (total!.results[0] as { total: number }).total,
+    month: { ...m, people: (required(people).results[0] as { people: number }).people },
+    total: (required(total).results[0] as { total: number }).total,
     graph: { nodes: [...nodeIds], edges: graph },
     users: await usersByIds(nodeIds),
   };
@@ -571,13 +588,13 @@ export async function profile(userId: number, viewer: Viewer) {
       params,
     ),
   ]);
-  const backers = supporters!.results as { userId: number; count: number }[];
+  const backers = required(supporters).results as { userId: number; count: number }[];
   const users = await usersByIds([userId, ...backers.map((s) => s.userId)]);
   if (!users[userId]) throw new HttpError(404, "user_not_found");
   return {
     user: users[userId],
-    stats: { received: received!.results[0], sent: sent!.results[0] },
-    values: values!.results,
+    stats: { received: required(received).results[0], sent: required(sent).results[0] },
+    values: required(values).results,
     supporters: backers,
     users,
   };
@@ -610,5 +627,5 @@ export async function syncStatus() {
               SUM((avatar_ver IS NOT NULL OR custom_avatar_key IS NOT NULL) AND active = 1) AS withAvatar FROM users`,
     ),
   ]);
-  return { last: last!.results[0] ?? null, lastOk: lastOk!.results[0] ?? null, counts: counts!.results[0] };
+  return { last: required(last).results[0] ?? null, lastOk: required(lastOk).results[0] ?? null, counts: required(counts).results[0] };
 }
