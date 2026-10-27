@@ -8,18 +8,18 @@
 
 ## 迁移矩阵
 
-| 原入口/配置                             | 当前实现                                                                                           | 证据与状态                                                                           |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `wrangler.config.ts` / Wrangler bundler | `vite.config.ts` + 官方 Vite 2.0 beta，cf 委派 Vite/Rolldown                                       | 两个 mode 构建成功，旧配置删除                                                       |
-| dev 前置 Wrangler D1 migrations         | `local-d1.ts` → `cf d1 raw --local`，原路径/ID/历史表                                              | 历史幂等、失败批次回滚、真实 cf dev HTTP 通过                                        |
-| 演示数据 Wrangler execute               | cf raw 原子 SQL 批次                                                                               | 24 人/64 帖数据可由 cf dev 读到                                                      |
-| Wrangler harness / legacy 配置适配器    | Miniflare 5/workerd + cf 构建产物 + cf 运行配置                                                    | 22 集成、12 浏览器测试通过；定时事件实际执行                                         |
-| 类型生成                                | `cf workers types --mode development`                                                              | strict 类型检查通过                                                                  |
-| 生产构建/发布/CI                        | 网页前置构建 → `cf build --mode production` → `cf deploy --prebuilt --no-provision --secrets-file` | 两种 dry-run 及 main 正式部署通过；远端模块与本地产物完全一致                        |
-| D1/R2、Access、Email Sending、DNS 运维  | cf 对应 resource 命令；邮件按发信域名单独定位 zone                                                 | setup fixture 通过；线上存储、Access、域名读回通过；Email Sending 查询因权限返回 403 |
-| 代码回滚                                | `cf workers deployments list/create`，明确 version UUID 与百分比                                   | create dry-run 请求核对通过；实际回滚未执行                                          |
-| 实时日志                                | Dashboard → 目标 Worker → Logs → Live                                                              | cf 不支持终端流式日志；用户明确批准入口变化                                          |
-| Custom Domain 归属查询                  | 保留 setup 原有的一次只读 API GET                                                                  | cf beta.23 命令/schema 无此接口；用户明确批准保留，非 cf 命令                        |
+| 原入口/配置                             | 当前实现                                                                                           | 证据与状态                                                                         |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `wrangler.config.ts` / Wrangler bundler | `vite.config.ts` + 官方 Vite 2.0 beta，cf 委派 Vite/Rolldown                                       | 两个 mode 构建成功，旧配置删除                                                     |
+| dev 前置 Wrangler D1 migrations         | `local-d1.ts` → `cf d1 raw --local`，原路径/ID/历史表                                              | 历史幂等、失败批次回滚、真实 cf dev HTTP 通过                                      |
+| 演示数据 Wrangler execute               | cf raw 原子 SQL 批次                                                                               | 24 人/64 帖数据可由 cf dev 读到                                                    |
+| Wrangler harness / legacy 配置适配器    | Miniflare 5/workerd + cf 构建产物 + cf 运行配置                                                    | 22 集成、12 浏览器测试通过；定时事件实际执行                                       |
+| 类型生成                                | `cf workers types --mode development`                                                              | strict 类型检查通过                                                                |
+| 生产构建/发布/CI                        | 网页前置构建 → `cf build --mode production` → `cf deploy --prebuilt --no-provision --secrets-file` | 两种 dry-run 及 main 正式部署通过；远端模块与本地产物完全一致                      |
+| D1/R2、Access、Email Sending、DNS 运维  | cf 对应 resource 命令；邮件按发信域名单独定位 zone                                                 | setup fixture 通过；线上存储、Access、域名及 Email Sending 读回通过，发信 DNS 匹配 |
+| 代码回滚                                | `cf workers deployments list/create`，明确 version UUID 与百分比                                   | create dry-run 请求核对通过；实际回滚未执行                                        |
+| 实时日志                                | Dashboard → 目标 Worker → Logs → Live                                                              | cf 不支持终端流式日志；用户明确批准入口变化                                        |
+| Custom Domain 归属查询                  | 保留 setup 原有的一次只读 API GET                                                                  | cf beta.23 命令/schema 无此接口；用户明确批准保留，非 cf 命令                      |
 
 项目的配置转换已在前序提交 `9627476` 完成。本次首先执行 `cf migrate --dry-run --bundler vite`，返回 `No Wrangler config found`：已没有可转换的 JSON/TOML 源配置。因此保留现有 `cloudflare.config.ts`，手工替换构建后端，没有伪造旧配置或覆盖资源声明。没有遗留迁移 TODO/阻断语句；缺资源和未知 mode 的校验继续保留。
 
@@ -66,7 +66,7 @@ GitHub Actions 已实际执行：[首次 main 检查](https://github.com/mushany
 - 全部 Worker bindings、compatibility date/flags、observability 与部署前一致；D1、R2、ASSETS 和 EMAIL 绑定均保留，无开发身份。
 - Custom Domain 与配置一致，workers.dev 和预览 URL 关闭；Access 应用、audience 和策略未变。首页及 API 的匿名请求、伪造开发身份和无效 JWT 请求均被重定向到预期 Access 登录域名。
 - Cron 与 `SYNC_CRON` 一致；cf 当前未暴露 schedules 读取命令，本次以临时只读 API GET 核验，没有新增运维入口。
-- Email Sending 发信域名查询返回 403，当前 API Token 缺少相应权限；邮件绑定已核验，发信域名状态尚未独立确认。真实登录后的交互和实际邮件收发本次未执行，不能用前序用户验收替代本次自动化结果。
+- Email Sending 已通过用户 cf CLI 的 OAuth 身份核验：具备 `email-sending.read`，发信域名已启用，公开 MX/SPF/DKIM/DMARC 与 cf 返回的记录一致。项目 `.env.cloudflare` 的 API Token 查询此接口返回 403；这与 CLI 登录身份的权限不同，核验时仅在子进程移除 Token 环境变量，未修改部署凭据。真实登录后的交互和实际邮件收发本次未执行，不能用前序用户验收替代本次自动化结果。
 
 部署日志和读回证据存于不入 git 的 `local/cf-validation/`；D1 还原点与发布提交记于 `local/last-deploy`。
 
