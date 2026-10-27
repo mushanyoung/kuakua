@@ -123,8 +123,11 @@ pnpm run doctor        # 必须没有 ✗
 
 ```bash
 git pull --ff-only
+pnpm install --frozen-lockfile
 pnpm run doctor
 ```
+
+先按锁文件更新依赖，再运行体检。上游更新 cf 工具链或 pnpm 安装策略后，旧 `node_modules` 会触发 `verifyDepsBeforeRun` 检查；此时直接运行 `doctor` 会在读取配置前退出。
 
 - 有 ✗：通常是新版本加了必填项，按提示问人、`config set`。
 - 有 "is not a known setting"：新版本不再用这一项，确认后 `pnpm run config unset KEY`。

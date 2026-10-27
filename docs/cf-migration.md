@@ -57,7 +57,7 @@
 
 本地证据在 `test-results/check.log`、`unit.xml`、`integration.xml`、`cli.xml`、`e2e.xml`、`cf-dev.log`、`rollback-dry-run.json` 和 `d1-dry-run.json`。这些是实际运行产物，不入 git；长期证据是本页和可重跑的测试。
 
-GitHub Actions 已实际执行：[首次 main 检查](https://github.com/mushanyoung/kuakua/actions/runs/40441586474) 的格式、lint、类型、unit、build、integration 通过，CLI 开发流程超时。[串行复跑](https://github.com/mushanyoung/kuakua/actions/runs/40442556246) 定位到 Vite 在主机与端口之间输出 ANSI 控制码，导致测试未识别已启动的服务。地址解析现先去掉控制码，并强制彩色输出覆盖此回归；保留串行执行、原超时、全部断言和零重试。后续实际结果见 [main 检查记录](https://github.com/mushanyoung/kuakua/actions/workflows/check.yml?query=branch%3Amain)。本地通过不代替 CI 通过。
+GitHub Actions 已实际执行：[首次 main 检查](https://github.com/mushanyoung/kuakua/actions/runs/40441586474) 的格式、lint、类型、unit、build、integration 通过，CLI 开发流程超时。[串行复跑](https://github.com/mushanyoung/kuakua/actions/runs/40442556246) 定位到 Vite 在主机与端口之间输出 ANSI 控制码，导致测试未识别已启动的服务。地址解析现先去掉控制码，并强制彩色输出覆盖此回归；保留串行执行、原超时、全部断言和零重试。修复提交 `e4b2df7` 的 [main 检查](https://github.com/mushanyoung/kuakua/actions/runs/40443749022) 已完成，全部质量检查通过。本地通过不代替 CI 通过。
 
 ## 发布后核验
 
@@ -69,6 +69,19 @@ GitHub Actions 已实际执行：[首次 main 检查](https://github.com/mushany
 - Email Sending 已通过用户 cf CLI 的 OAuth 身份核验：具备 `email-sending.read`，发信域名已启用，公开 MX/SPF/DKIM/DMARC 与 cf 返回的记录一致。项目 `.env.cloudflare` 的 API Token 查询此接口返回 403；这与 CLI 登录身份的权限不同，核验时仅在子进程移除 Token 环境变量，未修改部署凭据。真实登录后的交互和实际邮件收发本次未执行，不能用前序用户验收替代本次自动化结果。
 
 部署日志和读回证据存于不入 git 的 `local/cf-validation/`；D1 还原点与发布提交记于 `local/last-deploy`。
+
+## 同步上游后的现有部署验证
+
+2026-10-26（America/Los_Angeles），另一台部署机器同步到 `e4b2df7` 后完成迁移和重新发布。该机器的 `node_modules` 仍含 Wrangler，目标环境也仍运行 Wrangler 发布的版本，因此重新执行了安装、完整检查和正式部署，未沿用前序部署的验收结果。
+
+- `pnpm install --frozen-lockfile` 更新本机工具链并移除 Wrangler；锁文件和完整依赖树均无 Wrangler 包，本地存储路径保留。
+- `pnpm run check` 全部通过：格式、lint、strict 类型、20 unit、22 integration、4 CLI、12 e2e 和生产构建；`doctor`、部署脚本语法检查及实际生产配置的 prebuilt 发布 dry-run 通过。
+- `pnpm run deploy` 发布 `e4b2df7`，发布前保存 D1 还原点，无待应用迁移。Cloudflare 读回来源从 `wrangler` 变为 `cf_cli`，新版本承载 100% 流量；远端主模块与本地生产构建逐字节一致。
+- 发布前后全部 Worker bindings、运行兼容设置、observability、Custom Domain、Cron、Access 应用与策略一致。workers.dev 与预览 URL 关闭，无开发身份，构建产物不含密钥，临时 secrets 文件已清理。
+- D1 `quick_check` 为 `ok`，用户、帖子、评论、表情数量一致；从 D1 取得已有头像键后，经 cf 成功读回 R2 图片，最近一次 Lark 目录同步成功。发信域名经 cf 查询已开通且启用，6 条 MX/SPF/DKIM/DMARC 记录与公开 DNS 一致。
+- 首页、API、管理接口、深链接、头像，以及伪造开发身份和无效 JWT 的请求均被重定向到预期 Access 登录入口。真实登录后的线上交互、实际邮件收发未执行；桌面和移动端功能流程由本地 e2e 验证。
+
+本次环境的域名、资源 ID、版本 ID、还原点和数据统计只保存在本机 `local/cf-validation/` 与 `local/last-deploy`，不写入共享配置。本次记录提交只更新文档；线上代码对应 `e4b2df7`，其 GitHub Actions 已通过。
 
 ## 常用命令与发布边界
 
