@@ -27,6 +27,8 @@ pnpm run check
 
 Cloudflare 配置 unit tests 验证开发身份隔离、生产资源 ID、域名和 Cron、邮件绑定开关、密钥不进入构建变量，以及缺少资源/错误 mode 的失败路径。`pnpm run test:cli` 在临时项目中运行本地迁移和演示数据导入、cf R2 上传与 `cf dev`，用真实 HTTP 确认 D1 和头像数据可见；两个 mode 均执行 `cf build`、`cf deploy --dry-run` 和 `cf deploy --prebuilt --dry-run`，生产使用虚构设置；错误 mode 的预构建发布必须失败。本地迁移额外验证历史幂等性和失败批次的 schema/history 原子回滚，不发布资源。setup 回归运行真实 cf CLI，API 指向本地 HTTP fixture，唯一保留的 curl 查询使用测试替身；验证首次开通、重复执行、外部 Access 策略不改写及邮件开通。日志写入 `test-results/cf-dev.log`。CLI 回归在 Miniflare 集成测试关闭后单独运行，并使用临时开发服务注册目录。
 
+CLI 测试文件串行运行，避免多组 cf/workerd 子进程争抢 CI runner 资源；单项 30 秒超时保持不变。unit 和集成测试仍按 Node 默认并发执行。
+
 类型由 `cf workers types` 生成到 `.cloudflare/types/index.d.ts`，`typecheck` 每次先生成。生成的 Env 类型引用 TypeScript 配置，配置又引用 Node 文件工具，因此 Worker 类型检查同时加载 Node 类型；运行环境仍由 Workers runtime 类型和 `nodejs_compat` 约束。测试直接使用 Miniflare 5/workerd，运行 cf/Vite 已生成的 Worker 代码；从同一 cf 配置取得绑定，测试存储与注册目录隔离。Miniflare beta 的 Fetcher 类型未声明 scheduled 方法，测试先验证其真实存在再调用，不替代业务定时任务。
 
 核心规则无须模拟数据库即可测试；集成与浏览器测试使用真实 Worker 和隔离 D1/R2，只替代 Lark 等外部服务。固定时钟仅在测试运行器加载构建产物时注入，稳定复现同毫秒请求，生产产物不包含它。浏览器测试用本地模拟身份，不验证线上 Access 身份提供方。网络登录和真实通知在部署后按部署指南验收。

@@ -10,6 +10,8 @@ const result = spawnSync(
   [
     "--test",
     "--test-timeout=30000",
+    // Each CLI file starts real cf/workerd processes; avoid competing for CI runner resources.
+    ...(group === "cli" ? ["--test-concurrency=1"] : []),
     "--test-reporter=spec",
     "--test-reporter-destination=stdout",
     "--test-reporter=junit",
