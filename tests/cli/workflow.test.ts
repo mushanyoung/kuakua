@@ -6,7 +6,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 
 const exec = promisify(execFile);
 const root = resolve(import.meta.dirname, "../..");
@@ -31,6 +31,9 @@ test("local migrations and demo data are visible to cf dev in isolated storage",
   const env = {
     ...process.env,
     CI: "true",
+    // Exercise Vite's colored CI output, including escape codes between the host and port.
+    FORCE_COLOR: "1",
+    NO_COLOR: undefined,
     WRANGLER_SEND_METRICS: "false",
     ENV_FILE: join(project, "missing.env"),
     CLOUDFLARE_REGISTRY_PATH: join(project, "registry"),
@@ -84,7 +87,7 @@ test("local migrations and demo data are visible to cf dev in isolated storage",
       const timeout = setTimeout(() => reject(new Error(`cf dev did not start:\n${logs}`)), 15_000);
       const collect = (data: Buffer) => {
         logs += data.toString();
-        const match = /(http:\/\/127\.0\.0\.1:\d+)/.exec(logs);
+        const match = /(http:\/\/127\.0\.0\.1:\d+)/.exec(stripVTControlCharacters(logs));
         if (match?.[1]) {
           clearTimeout(timeout);
           resolveUrl(match[1]);

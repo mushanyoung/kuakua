@@ -57,7 +57,7 @@
 
 本地证据在 `test-results/check.log`、`unit.xml`、`integration.xml`、`cli.xml`、`e2e.xml`、`cf-dev.log`、`rollback-dry-run.json` 和 `d1-dry-run.json`。这些是实际运行产物，不入 git；长期证据是本页和可重跑的测试。
 
-GitHub Actions 已实际执行：[首次 main 检查](https://github.com/mushanyoung/kuakua/actions/runs/40441586474) 的格式、lint、类型、unit、build、integration 通过，CLI 开发流程在多文件并发时触发 30 秒超时。CLI 测试文件改为串行，保持原超时、全部断言和零重试；后续实际结果见 [main 检查记录](https://github.com/mushanyoung/kuakua/actions/workflows/check.yml?query=branch%3Amain)。本地通过不代替 CI 通过。
+GitHub Actions 已实际执行：[首次 main 检查](https://github.com/mushanyoung/kuakua/actions/runs/40441586474) 的格式、lint、类型、unit、build、integration 通过，CLI 开发流程超时。[串行复跑](https://github.com/mushanyoung/kuakua/actions/runs/40442556246) 定位到 Vite 在主机与端口之间输出 ANSI 控制码，导致测试未识别已启动的服务。地址解析现先去掉控制码，并强制彩色输出覆盖此回归；保留串行执行、原超时、全部断言和零重试。后续实际结果见 [main 检查记录](https://github.com/mushanyoung/kuakua/actions/workflows/check.yml?query=branch%3Amain)。本地通过不代替 CI 通过。
 
 ## 发布后核验
 
